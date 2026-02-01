@@ -1,0 +1,139 @@
+html,
+body,
+#root {
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	overflow: hidden;
+	background-color: #070b14;
+	color: #e6f0ff;
+	font-family: 'Eurostile', 'Orbitron', 'Arial Black', system-ui, sans-serif;
+}
+
+body::before {
+	content: '';
+	position: fixed;
+	inset: -10%;
+	background:
+		radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.15), transparent 50%),
+		radial-gradient(circle at 80% 30%, rgba(34, 211, 238, 0.12), transparent 55%),
+		radial-gradient(circle at 50% 80%, rgba(45, 212, 191, 0.12), transparent 60%),
+		repeating-linear-gradient(
+			90deg,
+			rgba(56, 189, 248, 0.06),
+			rgba(56, 189, 248, 0.06) 2px,
+			transparent 2px,
+			transparent 12px
+		);
+	animation: wave-drift 18s ease-in-out infinite alternate;
+	pointer-events: none;
+	z-index: 0;
+}
+
+body::after {
+	content: '';
+	position: fixed;
+	inset: -10%;
+	background: repeating-linear-gradient(
+		0deg,
+		rgba(45, 212, 191, 0.05),
+		rgba(45, 212, 191, 0.05) 1px,
+		transparent 1px,
+		transparent 10px
+	);
+	animation: wave-float 14s linear infinite;
+	mix-blend-mode: screen;
+	pointer-events: none;
+	z-index: 0;
+}
+
+@keyframes wave-drift {
+	0% {
+		transform: translate3d(0, 0, 0) rotate(0deg);
+	}
+	100% {
+		transform: translate3d(-2%, 2%, 0) rotate(0.5deg);
+	}
+}
+
+@keyframes wave-float {
+	0% {
+		transform: translate3d(0, 0, 0);
+	}
+	100% {
+		transform: translate3d(3%, -2%, 0);
+	}
+}
+
+.mic-button {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background:
+		radial-gradient(circle at 30% 30%, rgba(44, 130, 255, 0.18), transparent 55%),
+		radial-gradient(circle at 70% 20%, rgba(39, 255, 195, 0.18), transparent 50%),
+		linear-gradient(135deg, #05070d, #0b1220 60%, #0a0f1c);
+	z-index: 1;
+}
+
+.mic-button button {
+	padding: 1rem 2rem;
+	font-size: 1.25rem;
+	cursor: pointer;
+	background: linear-gradient(135deg, #2dd4bf, #2563eb);
+	color: #f8fbff;
+	border: none;
+	border-radius: 8px;
+	font-family: inherit;
+	box-shadow: 0 0 18px rgba(45, 212, 191, 0.35);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+}
+
+.mic-button button:hover {
+	background: linear-gradient(135deg, #5eead4, #3b82f6);
+}
+
+.mic-button .error {
+	margin-top: 1rem;
+	color: #fb7185;
+	text-align: center;
+}
+
+.tuner-canvas-wrapper {
+	width: 100%;
+	height: 100%;
+	position: relative;
+	z-index: 1;
+}
+
+.tuner-canvas-wrapper canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.tuner-overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: none;
+	backdrop-filter: blur(2px);
+}
+
+.tuner-overlay p {
+	margin: 0;
+	padding: 0.5rem 1rem;
+	background: rgba(10, 20, 40, 0.8);
+	color: #c7f9ff;
+	border-radius: 999px;
+	font-size: 1.35rem;
+	font-family: inherit;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+}
