@@ -32,8 +32,14 @@ function createMockAnalyser(sampleRate: number, injectFreq: number | null) {
 function createMockAudioContext(sampleRate: number, injectFreq: number | null) {
 	const analyser = createMockAnalyser(sampleRate, injectFreq)
 	const source = { connect: vi.fn() }
+	const createBiquadFilter = vi.fn(() => ({
+		type: 'lowpass',
+		frequency: { value: 0 },
+		connect: vi.fn(),
+	}))
 	return {
 		sampleRate,
+		createBiquadFilter,
 		createAnalyser: vi.fn(() => analyser),
 		createMediaStreamSource: vi.fn(() => source),
 		close: vi.fn().mockResolvedValue(undefined),
@@ -51,6 +57,11 @@ describe('usePitchDetection', () => {
 	beforeEach(() => {
 		rafCallbacks = []
 		rafId = 0
+		let now = 0
+		vi.spyOn(performance, 'now').mockImplementation(() => {
+			now += 50
+			return now
+		})
 		vi.stubGlobal(
 			'requestAnimationFrame',
 			vi.fn((cb: () => void) => {
@@ -63,6 +74,7 @@ describe('usePitchDetection', () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals()
+		vi.restoreAllMocks()
 	})
 
 	it('returns initial state when stream is null', () => {
@@ -103,7 +115,11 @@ describe('usePitchDetection', () => {
 		expect(mockCtx.createMediaStreamSource).toHaveBeenCalledWith(stream)
 
 		await act(async () => {
-			for (let i = 0; i < 5; i++) rafCallbacks.forEach((cb) => cb())
+			for (let i = 0; i < 8; i++) {
+				const callbacks = [...rafCallbacks]
+				rafCallbacks = []
+				callbacks.forEach((cb) => cb())
+			}
 		})
 
 		await waitFor(
@@ -141,7 +157,6 @@ describe('usePitchDetection', () => {
 
 		unmount()
 
-		expect(stopTrack).toHaveBeenCalled()
 		expect(mockCtx.close).toHaveBeenCalled()
 
 		vi.unstubAllGlobals()

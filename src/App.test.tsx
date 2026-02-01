@@ -9,8 +9,8 @@ vi.mock('@react-three/fiber', () => ({
 	),
 }))
 
-vi.mock('./components/TunerScene', () => ({
-	TunerScene: () => <div data-testid="tuner-scene">TunerScene</div>,
+vi.mock('./components/TunerSceneThree', () => ({
+	TunerSceneThree: () => <div data-testid="tuner-scene">TunerScene</div>,
 }))
 
 describe('App', () => {
@@ -46,6 +46,11 @@ describe('App', () => {
 
 		const mockCtx = {
 			sampleRate: 44100,
+			createBiquadFilter: vi.fn(() => ({
+				type: 'lowpass',
+				frequency: { value: 0 },
+				connect: vi.fn(),
+			})),
 			createAnalyser: vi.fn(() => ({
 				fftSize: 4096,
 				connect: vi.fn(),
@@ -86,6 +91,11 @@ describe('App', () => {
 
 		const mockCtx = {
 			sampleRate: 44100,
+			createBiquadFilter: vi.fn(() => ({
+				type: 'lowpass',
+				frequency: { value: 0 },
+				connect: vi.fn(),
+			})),
 			createAnalyser: vi.fn(() => ({
 				fftSize: 4096,
 				connect: vi.fn(),
