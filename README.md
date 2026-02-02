@@ -1,73 +1,58 @@
-# React + TypeScript + Vite
+# Guitar Tuner
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A browser-based guitar tuner that listens to your microphone, detects the closest musical note, and visualizes tuning accuracy in a 3D scene.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Microphone-gated start with an explicit "Allow microphone" action
+- Real-time pitch detection using Web Audio + autocorrelation
+- Note + cents display logic with stability smoothing
+- React Three Fiber scene with pulsing reference and offset rings
+- Works entirely in the browser (no backend)
 
-## React Compiler
+## How it works
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+- Requests a `MediaStream` from `navigator.mediaDevices.getUserMedia`.
+- Creates an `AudioContext` + `AnalyserNode` and runs autocorrelation over time-domain data.
+- Maps the detected frequency to the nearest note and computes cents offset.
+- Smooths and stabilizes readings before updating the UI.
+- Visualizes the current note in the center and offsets the ring radius by cents.
 
-## Expanding the ESLint configuration
+## Tech stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- React 19 + TypeScript
+- Vite
+- Three.js + @react-three/fiber + @react-three/drei
+- Vitest + Testing Library
 
-```js
-export default defineConfig([
-	globalIgnores(['dist']),
-	{
-		files: ['**/*.{ts,tsx}'],
-		extends: [
-			// Other configs...
+## Getting started
 
-			// Remove tseslint.configs.recommended and replace with this
-			tseslint.configs.recommendedTypeChecked,
-			// Alternatively, use this for stricter rules
-			tseslint.configs.strictTypeChecked,
-			// Optionally, add this for stylistic rules
-			tseslint.configs.stylisticTypeChecked,
-
-			// Other configs...
-		],
-		languageOptions: {
-			parserOptions: {
-				project: ['./tsconfig.node.json', './tsconfig.app.json'],
-				tsconfigRootDir: import.meta.dirname,
-			},
-			// other options...
-		},
-	},
-])
+```bash
+pnpm install
+pnpm dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Then open the local URL shown by Vite and allow microphone access.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-	globalIgnores(['dist']),
-	{
-		files: ['**/*.{ts,tsx}'],
-		extends: [
-			// Other configs...
-			// Enable lint rules for React
-			reactX.configs['recommended-typescript'],
-			// Enable lint rules for React DOM
-			reactDom.configs.recommended,
-		],
-		languageOptions: {
-			parserOptions: {
-				project: ['./tsconfig.node.json', './tsconfig.app.json'],
-				tsconfigRootDir: import.meta.dirname,
-			},
-			// other options...
-		},
-	},
-])
-```
+- `pnpm dev` - Start the dev server
+- `pnpm build` - Typecheck and build
+- `pnpm preview` - Preview the production build
+- `pnpm test` - Run tests in watch mode
+- `pnpm test:run` - Run tests once
+- `pnpm lint` - Run Oxlint
+- `pnpm format` - Run Oxfmt
+- `pnpm check` - Lint + format check
+
+## Project structure
+
+- `src/App.tsx` - App shell and microphone gate
+- `src/audio/usePitchDetection.ts` - Pitch detection + smoothing pipeline
+- `src/audio/noteUtils.ts` - Note/frequency math helpers
+- `src/components/TunerSceneThree.tsx` - R3F scene and visualizer
+
+## Notes
+
+- Requires a modern browser with Web Audio API and microphone access.
+- Best results come from playing a single, clean note at a time.
