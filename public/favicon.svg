@@ -1,0 +1,51 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+	<defs>
+		<!-- synthwave sunset in greens, pale top to deep emerald bottom -->
+		<linearGradient id="pick" x1="16" y1="5" x2="16" y2="27" gradientUnits="userSpaceOnUse">
+			<stop offset="0%" stop-color="#f0fdf4" />
+			<stop offset="22%" stop-color="#bef264" />
+			<stop offset="48%" stop-color="#4ade80" />
+			<stop offset="74%" stop-color="#16a34a" />
+			<stop offset="100%" stop-color="#064e3b" />
+		</linearGradient>
+		<filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+			<feGaussianBlur stdDeviation="0.9" result="b" />
+			<feMerge>
+				<feMergeNode in="b" />
+				<feMergeNode in="SourceGraphic" />
+			</feMerge>
+		</filter>
+		<path
+			id="pickShape"
+			d="M16 5.4 C20.6 5.4 24.6 6.9 24.6 11 C24.6 16.2 20 23.2 16 26.7 C12 23.2 7.4 16.2 7.4 11 C7.4 6.9 11.4 5.4 16 5.4 Z"
+		/>
+		<!-- scanline gaps: black stripes punch transparent slits through the pick -->
+		<mask id="stripeMask">
+			<use href="#pickShape" fill="#fff" />
+			<g stroke="#000" stroke-linecap="butt">
+				<line x1="6" y1="14.6" x2="26" y2="14.6" stroke-width="0.7" />
+				<line x1="6" y1="16.2" x2="26" y2="16.2" stroke-width="0.8" />
+				<line x1="6" y1="18.0" x2="26" y2="18.0" stroke-width="0.9" />
+				<line x1="6" y1="20.0" x2="26" y2="20.0" stroke-width="1.0" />
+				<line x1="6" y1="22.2" x2="26" y2="22.2" stroke-width="1.1" />
+			</g>
+		</mask>
+	</defs>
+
+	<!-- pick body with neon glow and transparent scanline slits -->
+	<g filter="url(#glow)">
+		<use href="#pickShape" fill="url(#pick)" mask="url(#stripeMask)" />
+	</g>
+
+	<!-- neon green outline -->
+	<use href="#pickShape" fill="none" stroke="#3dff9a" stroke-width="1.1" filter="url(#glow)" />
+	<!-- top-left sheen -->
+	<path
+		d="M11.4 7.2 C9.4 8.1 8.4 9.5 8.4 11"
+		fill="none"
+		stroke="#f7fff7"
+		stroke-width="0.8"
+		stroke-linecap="round"
+		opacity="0.55"
+	/>
+</svg>
