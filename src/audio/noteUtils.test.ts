@@ -4,6 +4,8 @@ import {
 	getCents,
 	isInvalidFrequency,
 	cannotComputeCents,
+	noteFromSemitone,
+	frequencyToSemitone,
 	IN_TUNE_CENTS_THRESHOLD,
 } from './noteUtils'
 
@@ -59,6 +61,39 @@ describe('frequencyToNote', () => {
 		const result = frequencyToNote(196)
 		expect(result.name).toBe('G')
 		expect(result.octave).toBe(3)
+	})
+})
+
+describe('noteFromSemitone', () => {
+	it('maps 0 to A4', () => {
+		expect(noteFromSemitone(0)).toEqual({ name: 'A', octave: 4, referenceHz: 440 })
+	})
+	it('maps -29 to E2 (low E string)', () => {
+		const result = noteFromSemitone(-29)
+		expect(result.name).toBe('E')
+		expect(result.octave).toBe(2)
+	})
+	it('distinguishes octaves of the same pitch class', () => {
+		expect(noteFromSemitone(-29).octave).toBe(2) // E2
+		expect(noteFromSemitone(-17).octave).toBe(3) // E3
+		expect(noteFromSemitone(-5).octave).toBe(4) // E4
+	})
+	it('agrees with frequencyToNote on the reference frequency', () => {
+		const { semitonesFromA4, referenceHz } = frequencyToNote(196)
+		expect(noteFromSemitone(semitonesFromA4).referenceHz).toBeCloseTo(referenceHz, 6)
+	})
+})
+
+describe('frequencyToSemitone', () => {
+	it('returns 0 for A4', () => {
+		expect(frequencyToSemitone(440)).toBe(0)
+	})
+	it('returns -29 for low E (~82.41 Hz)', () => {
+		expect(frequencyToSemitone(82.41)).toBe(-29)
+	})
+	it('returns null for invalid input', () => {
+		expect(frequencyToSemitone(0)).toBeNull()
+		expect(frequencyToSemitone(Number.NaN)).toBeNull()
 	})
 })
 

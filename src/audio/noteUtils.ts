@@ -4,6 +4,28 @@ const A4_INDEX = 9
 
 export const isInvalidFrequency = (freq: number) => !Number.isFinite(freq) || freq <= 0
 
+/**
+ * Resolve a semitone offset from A4 into a concrete note (name, octave and the
+ * exact reference frequency for that note). Keeping this in one place means the
+ * displayed note, its octave and the cents reference can never disagree.
+ */
+export function noteFromSemitone(semitonesFromA4: number): {
+	name: string
+	octave: number
+	referenceHz: number
+} {
+	const noteIndex = (((A4_INDEX + semitonesFromA4) % 12) + 12) % 12
+	const octave = 4 + Math.floor((A4_INDEX + semitonesFromA4) / 12)
+	const referenceHz = A4_HZ * Math.pow(2, semitonesFromA4 / 12)
+	return { name: NOTE_NAMES[noteIndex], octave, referenceHz }
+}
+
+/** Nearest semitone (relative to A4) for a frequency, or null when invalid. */
+export function frequencyToSemitone(freq: number): number | null {
+	if (isInvalidFrequency(freq)) return null
+	return Math.round(12 * Math.log2(freq / A4_HZ))
+}
+
 export function frequencyToNote(freq: number): {
 	name: string
 	octave: number
@@ -18,13 +40,10 @@ export function frequencyToNote(freq: number): {
 			semitonesFromA4: 0,
 		}
 	}
-	const semitonesFromA4 = 12 * Math.log2(freq / A4_HZ)
-	const rounded = Math.round(semitonesFromA4)
-	const noteIndex = (A4_INDEX + (rounded % 12) + 12) % 12
-	const octave = 4 + Math.floor((A4_INDEX + rounded) / 12)
-	const referenceHz = A4_HZ * Math.pow(2, rounded / 12)
+	const rounded = Math.round(12 * Math.log2(freq / A4_HZ))
+	const { name, octave, referenceHz } = noteFromSemitone(rounded)
 	return {
-		name: NOTE_NAMES[noteIndex],
+		name,
 		octave,
 		referenceHz,
 		semitonesFromA4: rounded,
