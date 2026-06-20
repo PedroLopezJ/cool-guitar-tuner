@@ -74,7 +74,13 @@ describe('App', () => {
 		await user.click(screen.getByRole('button', { name: /allow microphone/i }))
 
 		await waitFor(() => {
-			expect(getUserMedia).toHaveBeenCalledWith({ audio: true })
+			expect(getUserMedia).toHaveBeenCalledWith({
+				audio: {
+					echoCancellation: false,
+					noiseSuppression: false,
+					autoGainControl: false,
+				},
+			})
 		})
 	})
 
