@@ -314,13 +314,20 @@
    in tune) so the player sees which string they're on at a glance. */
 .string-strip {
 	position: absolute;
-	bottom: clamp(0.75rem, 3.5vh, 1.75rem);
+	/* Lift clear of the home indicator / gesture bar on notched phones. */
+	bottom: calc(clamp(0.75rem, 3.5vh, 1.75rem) + env(safe-area-inset-bottom, 0px));
 	left: 50%;
 	transform: translateX(-50%);
 	z-index: 3;
 	display: flex;
+	/* Wrap onto a second row instead of overflowing toward the screen edges when
+	   a tuning has many strings (7-/8-string) on a narrow phone. */
+	flex-wrap: wrap;
+	justify-content: center;
 	gap: 0.35rem;
-	max-width: 96vw;
+	/* min(92vw, …) keeps a steady gutter on both sides so the pills never sit
+	   flush against the screen edges; the rem cap stops it stretching on desktop. */
+	max-width: min(92vw, 34rem);
 	padding: 0.45rem 0.65rem;
 	background: rgba(8, 16, 28, 0.45);
 	border: 1px solid rgba(56, 189, 248, 0.25);

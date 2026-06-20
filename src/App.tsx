@@ -1,18 +1,14 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
 import './App.css'
-import { TunerSceneThree } from './components/TunerSceneThree'
-import { TuningSelector } from './components/TuningSelector'
-import { InstrumentToggle } from './components/InstrumentToggle'
-import { StringStrip } from './components/StringStrip'
 import { usePitchDetection } from './audio/usePitchDetection'
-import {
-	DEFAULT_TUNING_BY_INSTRUMENT,
-	lowestFrequency,
-	nearestString,
-	stringNumber,
-	type Instrument,
-} from './audio/tunings'
+import { DEFAULT_TUNING_BY_INSTRUMENT, lowestFrequency, type Instrument } from './audio/tunings'
+
+// The 3D tuner pulls in three / @react-three-fiber / drei (~1 MB) — none of which
+// the initial mic-permission screen needs. Loading it lazily keeps that weight in
+// a separate chunk; importTunerView() is reused to warm the chunk on intent
+// (hover/focus) so it's usually ready by the time the mic is granted.
+const importTunerView = () => import('./TunerView')
+const TunerView = lazy(importTunerView)
 
 // A tuner needs the raw signal: echo cancellation, noise suppression and auto
 // gain (all on by default, especially in Firefox) distort pitch and amplitude.
@@ -68,14 +64,6 @@ function App() {
 		setTuning(DEFAULT_TUNING_BY_INSTRUMENT[next])
 	}, [])
 
-	// Which open string of the selected tuning the current pitch is closest to.
-	const active = pitchState.frequency === null ? null : nearestString(pitchState.frequency, tuning)
-	let stringInfo: { number: number | null; target: string } | null = null
-	if (active) {
-		const number = stringNumber(tuning, active.index)
-		stringInfo = { number: number > 0 ? number : null, target: active.note }
-	}
-
 	const requestMic = useCallback(async () => {
 		setError(null)
 		if (!navigator.mediaDevices?.getUserMedia) {
@@ -111,41 +99,36 @@ function App() {
 
 	if (stream) {
 		return (
-			<div className={`tuner-canvas-wrapper${pitchState.inTune ? ' in-tune' : ''}`}>
-				{/* Cap the pixel ratio (Retina default 2–3× shades 4–9× the pixels for no
-				    visible gain) and render on demand — a FrameLimiter in the scene drives
-				    a steady ~30 fps instead of pinning the GPU at the display's full
-				    refresh (120 Hz on ProMotion). */}
-				<Canvas
-					dpr={[1, 1.5]}
-					flat
-					orthographic
-					frameloop="demand"
-					camera={{ position: [0, 0, 5], zoom: 120 }}
-				>
-					<TunerSceneThree pitchState={pitchState} stringInfo={stringInfo} />
-				</Canvas>
-				<div className="electric-overlay" aria-hidden="true" />
-				<InstrumentToggle value={instrument} onChange={changeInstrument} />
-				<TuningSelector instrument={instrument} value={tuning} onChange={setTuning} />
-				<StringStrip
-					tuning={tuning}
-					activeIndex={active ? active.index : null}
-					inTune={pitchState.inTune}
-				/>
-				{!hasDetected && (
-					<div className="tuner-overlay" role="status" aria-live="polite">
-						<p>Listening… play a single note to start tuning.</p>
+			<Suspense
+				fallback={
+					<div className="tuner-canvas-wrapper">
+						<div className="tuner-overlay" role="status" aria-live="polite">
+							<p>Loading tuner…</p>
+						</div>
 					</div>
-				)}
-			</div>
+				}
+			>
+				<TunerView
+					pitchState={pitchState}
+					instrument={instrument}
+					tuning={tuning}
+					hasDetected={hasDetected}
+					onChangeInstrument={changeInstrument}
+					onChangeTuning={setTuning}
+				/>
+			</Suspense>
 		)
 	}
 
 	return (
 		<div className="mic-button">
 			<div>
-				<button type="button" onClick={requestMic}>
+				<button
+					type="button"
+					onClick={requestMic}
+					onPointerEnter={() => void importTunerView()}
+					onFocus={() => void importTunerView()}
+				>
 					Allow microphone
 				</button>
 				{error && (

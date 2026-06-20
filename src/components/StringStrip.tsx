@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react'
+import { memo, type CSSProperties } from 'react'
 import { MAX_EXTENDED_STRINGS, extendedLevel, stringLetter, type Tuning } from '../audio/tunings'
 
 /**
@@ -8,7 +8,7 @@ import { MAX_EXTENDED_STRINGS, extendedLevel, stringLetter, type Tuning } from '
  * pitch lights up and turns green once it lands in tune, so you can see which
  * string you're on without leaving the rings.
  */
-export function StringStrip({
+export const StringStrip = memo(function StringStrip({
 	tuning,
 	activeIndex,
 	inTune,
@@ -37,4 +37,4 @@ export function StringStrip({
 			})}
 		</div>
 	)
-}
+})

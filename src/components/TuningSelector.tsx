@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
 	TUNING_CATEGORY_ORDER,
 	MAX_EXTENDED_STRINGS,
@@ -33,7 +33,7 @@ function NoteLetters({ tuning }: { tuning: Tuning }) {
 	)
 }
 
-export function TuningSelector({
+export const TuningSelector = memo(function TuningSelector({
 	instrument,
 	value,
 	onChange,
@@ -44,6 +44,16 @@ export function TuningSelector({
 }) {
 	const [open, setOpen] = useState(false)
 	const ref = useRef<HTMLDivElement>(null)
+
+	// Group the instrument's tunings by category once per instrument, instead of
+	// re-filtering the full list for every category on each render of the panel.
+	const groups = useMemo(() => {
+		const all = tuningsForInstrument(instrument)
+		return TUNING_CATEGORY_ORDER.map((category) => ({
+			category,
+			items: all.filter((tuning) => tuning.category === category),
+		})).filter((group) => group.items.length > 0)
+	}, [instrument])
 
 	// Dismiss on outside click or Escape so the panel never traps the view.
 	useEffect(() => {
@@ -84,11 +94,7 @@ export function TuningSelector({
 
 			{open && (
 				<div className="tuning-selector__panel" role="listbox">
-					{TUNING_CATEGORY_ORDER.map((category) => {
-						const items = tuningsForInstrument(instrument).filter(
-							(tuning) => tuning.category === category,
-						)
-						if (items.length === 0) return null
+					{groups.map(({ category, items }) => {
 						return (
 							<div className="tuning-group" key={category}>
 								<div className="tuning-group__label">{category}</div>
@@ -117,4 +123,4 @@ export function TuningSelector({
 			)}
 		</div>
 	)
-}
+})

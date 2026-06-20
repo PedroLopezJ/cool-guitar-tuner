@@ -1,7 +1,8 @@
+import { memo } from 'react'
 import { INSTRUMENTS, type Instrument } from '../audio/tunings'
 
 /** Small segmented control (Guitar / Bass) tucked into a corner. */
-export function InstrumentToggle({
+export const InstrumentToggle = memo(function InstrumentToggle({
 	value,
 	onChange,
 }: {
@@ -24,4 +25,4 @@ export function InstrumentToggle({
 			))}
 		</div>
 	)
-}
+})
