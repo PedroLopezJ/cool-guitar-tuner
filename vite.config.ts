@@ -9,11 +9,11 @@ export default defineConfig({
 			registerType: 'autoUpdate',
 			pwaAssets: { config: true }, // usa pwa-assets.config.ts para generar e inyectar iconos
 			manifest: {
-				name: 'Coolest Guitar Tuner',
+				name: 'Coolest Guitar & Bass Tuner',
 				short_name: 'Coolest Tuner',
 				description:
-					'Afinador de guitarra synthwave con detección de tono en tiempo real y escena 3D. Funciona sin conexión.',
-				lang: 'es',
+					"The coolest guitar and bass tuner you've ever seen, with real-time pitch detection and a 3D scene.",
+				lang: 'en',
 				theme_color: '#070b14',
 				background_color: '#070b14',
 				display: 'standalone',
