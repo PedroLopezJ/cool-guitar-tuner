@@ -10,6 +10,18 @@ body,
 	font-family: 'Eurostile', 'Orbitron', 'Arial Black', system-ui, sans-serif;
 }
 
+.app-version {
+	position: fixed;
+	right: 0.6rem;
+	bottom: 0.5rem;
+	z-index: 10;
+	font-size: 0.7rem;
+	letter-spacing: 0.05em;
+	color: rgba(230, 240, 255, 0.35);
+	pointer-events: none;
+	user-select: none;
+}
+
 .mic-button {
 	position: fixed;
 	inset: 0;
@@ -39,6 +51,21 @@ body,
 
 .mic-button button:hover {
 	background: linear-gradient(135deg, #5eead4, #3b82f6);
+}
+
+.mic-button .mic-panel {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	max-width: 24rem;
+	padding: 0 1rem;
+}
+
+.mic-button .mic-hint {
+	margin: 0 0 1.25rem;
+	color: #cbd5e1;
+	text-align: center;
+	line-height: 1.5;
 }
 
 .mic-button .error {

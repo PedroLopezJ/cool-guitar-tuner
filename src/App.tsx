@@ -97,47 +97,58 @@ function App() {
 		if (pitchState.frequency !== null) setHasDetected(true)
 	}, [pitchState.frequency])
 
+	const versionBadge = <span className="app-version">v{__APP_VERSION__}</span>
+
 	if (stream) {
 		return (
-			<Suspense
-				fallback={
-					<div className="tuner-canvas-wrapper">
-						<div className="tuner-overlay" role="status" aria-live="polite">
-							<p>Loading tuner…</p>
+			<>
+				<Suspense
+					fallback={
+						<div className="tuner-canvas-wrapper">
+							<div className="tuner-overlay" role="status" aria-live="polite">
+								<p>Loading tuner…</p>
+							</div>
 						</div>
-					</div>
-				}
-			>
-				<TunerView
-					pitchState={pitchState}
-					instrument={instrument}
-					tuning={tuning}
-					hasDetected={hasDetected}
-					onChangeInstrument={changeInstrument}
-					onChangeTuning={setTuning}
-				/>
-			</Suspense>
+					}
+				>
+					<TunerView
+						pitchState={pitchState}
+						instrument={instrument}
+						tuning={tuning}
+						hasDetected={hasDetected}
+						onChangeInstrument={changeInstrument}
+						onChangeTuning={setTuning}
+					/>
+				</Suspense>
+				{versionBadge}
+			</>
 		)
 	}
 
 	return (
-		<div className="mic-button">
-			<div>
-				<button
-					type="button"
-					onClick={requestMic}
-					onPointerEnter={() => void importTunerView()}
-					onFocus={() => void importTunerView()}
-				>
-					Allow microphone
-				</button>
-				{error && (
-					<p className="error" role="alert">
-						{error}
+		<>
+			<div className="mic-button">
+				<div className="mic-panel">
+					<p className="mic-hint">
+						We need your microphone to listen to your instrument and detect the pitch.
 					</p>
-				)}
+					<button
+						type="button"
+						onClick={requestMic}
+						onPointerEnter={() => void importTunerView()}
+						onFocus={() => void importTunerView()}
+					>
+						Allow microphone
+					</button>
+					{error && (
+						<p className="error" role="alert">
+							{error}
+						</p>
+					)}
+				</div>
 			</div>
-		</div>
+			{versionBadge}
+		</>
 	)
 }
 
