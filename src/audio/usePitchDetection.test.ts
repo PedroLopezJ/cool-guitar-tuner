@@ -120,6 +120,7 @@ describe('usePitchDetection', () => {
 			noteWithOctave: '—',
 			cents: 0,
 			inTune: false,
+			suspended: false,
 		})
 	})
 
@@ -239,6 +240,26 @@ describe('usePitchDetection', () => {
 
 			expect(mockCtx.analyser.getFloatTimeDomainData).not.toHaveBeenCalled()
 			expect(result.current.frequency).toBeNull()
+		})
+
+		it('flags a context that stays suspended, and clears the flag once it runs', async () => {
+			const mockCtx = createMockAudioContext(SAMPLE_RATE, 440, 'suspended')
+			installAudioContext(mockCtx)
+
+			const { result } = renderHook(() => usePitchDetection(fakeStream))
+			// The mocked clock advances 50 ms per read: a couple of frames stay inside
+			// the grace period (no "tap to start" flash for a context about to resume)…
+			await runFrames(2)
+			expect(result.current.suspended).toBe(false)
+			// …but a context still suspended well past it is reported.
+			await runFrames(12)
+			expect(result.current.suspended).toBe(true)
+			expect(result.current.frequency).toBeNull()
+
+			mockCtx.state = 'running'
+			await runFrames(8)
+			await waitFor(() => expect(result.current.noteWithOctave).toBe('A4'))
+			expect(result.current.suspended).toBe(false)
 		})
 
 		it('blanks a live reading when the context gets interrupted (iOS)', async () => {
