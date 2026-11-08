@@ -2,6 +2,9 @@ import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+// Self-hosted so the label renders offline: without an explicit `font`, troika
+// fetches its default from a CDN that the service worker never precaches.
+import fontUrl from '@fontsource/roboto/files/roboto-latin-400-normal.woff?url'
 import type { PitchState } from '../audio/usePitchDetection'
 
 const BASE_RADIUS = 1.6
@@ -60,16 +63,35 @@ function ResponsiveZoom() {
 // a steady ~30 fps so the rings keep pulsing smoothly without re-rendering at the
 // display's full refresh (120 Hz on ProMotion = ~4× the GPU work for no gain).
 // damp()/exp() easing is frame-rate independent, so the motion is unchanged.
-const TARGET_FPS = 30
+// With no signal there's nothing to track — just the slow idle pulse — so once
+// the last transition has had time to ease out we drop to IDLE_FPS to save
+// battery while the tuner sits open between notes.
+const ACTIVE_FPS = 30
+const IDLE_FPS = 10
+// Long enough for the radius/color damping above to visibly settle.
+const SETTLE_MS = 1000
 
-function FrameLimiter() {
+function FrameLimiter({ active, inTune }: { active: boolean; inTune: boolean }) {
 	const invalidate = useThree((s) => s.invalidate)
+	// Read inside the rAF loop so a state change retunes the rate without
+	// restarting the loop.
+	const activeRef = useRef(active)
+	const settleUntilRef = useRef(0)
+
+	useEffect(() => {
+		activeRef.current = active
+		// Any change (signal gained/lost, in-tune flip) gets a full-rate window so
+		// the easing that follows it stays smooth.
+		settleUntilRef.current = performance.now() + SETTLE_MS
+	}, [active, inTune])
+
 	useEffect(() => {
 		let raf = 0
 		let last = 0
-		const interval = 1000 / TARGET_FPS
 		function loop(now: number) {
 			raf = requestAnimationFrame(loop)
+			const busy = activeRef.current || now < settleUntilRef.current
+			const interval = 1000 / (busy ? ACTIVE_FPS : IDLE_FPS)
 			if (now - last >= interval) {
 				last = now
 				invalidate()
@@ -149,7 +171,7 @@ export function TunerSceneThree({
 	pitchState: PitchState
 	stringInfo: { number: number | null; target: string } | null
 }) {
-	const { noteName, noteWithOctave, cents, inTune } = pitchState
+	const { frequency, noteName, noteWithOctave, cents, inTune } = pitchState
 	const baseColor = inTune ? COLOR_IN_TUNE : COLOR_BASE
 	const offsetColor = inTune ? COLOR_IN_TUNE : COLOR_OFFSET
 	const offsetRadius = frequencyRadius(cents)
@@ -161,15 +183,23 @@ export function TunerSceneThree({
 	return (
 		<>
 			<AnimatedBackground inTune={inTune} />
-			<FrameLimiter />
+			<FrameLimiter active={frequency !== null} inTune={inTune} />
 			<ambientLight intensity={0.6} />
 			<ResponsiveZoom />
 			<Suspense fallback={null}>
-				<Text position={[0, 0, 0.2]} fontSize={0.6} anchorX="center" anchorY="middle" color="#e6f0ff">
+				<Text
+					font={fontUrl}
+					position={[0, 0, 0.2]}
+					fontSize={0.6}
+					anchorX="center"
+					anchorY="middle"
+					color="#e6f0ff"
+				>
 					{noteName}
 				</Text>
 				{octave && (
 					<Text
+						font={fontUrl}
 						position={[octaveX, -0.16, 0.2]}
 						fontSize={0.3}
 						anchorX="left"
@@ -181,6 +211,7 @@ export function TunerSceneThree({
 				)}
 				{stringInfo && (
 					<Text
+						font={fontUrl}
 						position={[0, -0.62, 0.2]}
 						fontSize={0.16}
 						anchorX="center"
