@@ -1,5 +1,6 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["react", "typescript", "unicorn", "oxc", "vitest"],
 	"categories": {
 		"correctness": "warn",
 		"suspicious": "warn"
@@ -9,5 +10,12 @@
 		"es2021": true,
 		"node": true
 	},
-	"ignorePatterns": ["node_modules", "dist", "build", ".git"]
+	"rules": {
+		"react/rules-of-hooks": "error",
+		"react/exhaustive-deps": "warn",
+		"react/react-in-jsx-scope": "off",
+		"vitest/require-mock-type-parameters": "off",
+		"no-underscore-dangle": ["warn", { "allow": ["__APP_VERSION__"] }]
+	},
+	"ignorePatterns": ["node_modules", "dist", "build", ".git", ".claude"]
 }
