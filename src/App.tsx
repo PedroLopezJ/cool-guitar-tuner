@@ -1,7 +1,14 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
 import './App.css'
 import { usePitchDetection } from './audio/usePitchDetection'
-import { DEFAULT_TUNING_BY_INSTRUMENT, lowestFrequency, type Instrument } from './audio/tunings'
+import {
+	DEFAULT_TUNING_BY_INSTRUMENT,
+	lowestFrequency,
+	type Instrument,
+	type Tuning,
+} from './audio/tunings'
+import { useWakeLock } from './hooks/useWakeLock'
+import { loadSettings, saveSettings, settingsTuning } from './settings'
 
 // The 3D tuner pulls in three / @react-three-fiber / drei (~1 MB) — none of which
 // the initial mic-permission screen needs. Loading it lazily keeps that weight in
@@ -19,6 +26,23 @@ const MIC_CONSTRAINTS: MediaStreamConstraints = {
 		autoGainControl: false,
 	},
 }
+
+const MIC_DISCONNECTED_MESSAGE = 'The microphone was disconnected. Reconnect it and try again.'
+
+// How long the start screen stays blank waiting on the Permissions API before
+// falling back to the "Allow microphone" button.
+const PERMISSION_CHECK_TIMEOUT_MS = 300
+
+/**
+ * Start-screen state while there's no stream: 'checking' asks the Permissions
+ * API whether the mic is already granted (shown as a neutral screen so the
+ * button doesn't flash for returning users), 'starting' auto-requests a mic that
+ * was granted before, and 'idle' shows the button.
+ */
+type StartPhase = 'checking' | 'starting' | 'idle'
+
+const canQueryPermissions = () =>
+	typeof navigator !== 'undefined' && typeof navigator.permissions?.query === 'function'
 
 function describeMicError(err: unknown): string {
 	const name =
@@ -42,8 +66,17 @@ function describeMicError(err: unknown): string {
 function App() {
 	const [stream, setStream] = useState<MediaStream | null>(null)
 	const [error, setError] = useState<string | null>(null)
-	const [instrument, setInstrument] = useState<Instrument>('guitar')
-	const [tuning, setTuning] = useState(DEFAULT_TUNING_BY_INSTRUMENT.guitar)
+	const [startPhase, setStartPhase] = useState<StartPhase>(() =>
+		canQueryPermissions() ? 'checking' : 'idle',
+	)
+	// Restore the last instrument/tuning; loadSettings() validates whatever it finds.
+	const [initialSettings] = useState(loadSettings)
+	const [instrument, setInstrument] = useState<Instrument>(initialSettings.instrument)
+	const [tuning, setTuning] = useState<Tuning>(() => settingsTuning(initialSettings))
+
+	useEffect(() => {
+		saveSettings({ instrument, tuningId: tuning.id })
+	}, [instrument, tuning.id])
 
 	// Follow the selected tuning: search a little below its lowest string (so a
 	// flat string still registers) and slide the high-pass down to match. Bass
@@ -54,6 +87,10 @@ function App() {
 		return { minFreq: lowest * 0.85, hpf: Math.max(20, lowest * 0.6) }
 	}, [tuning])
 	const pitchState = usePitchDetection(stream, detectionOptions)
+
+	// Keep the screen on while tuning — nobody wants to tap the phone awake
+	// between strings.
+	useWakeLock(stream !== null)
 
 	// Once the first note is heard we drop the "Listening…" prompt for good (for
 	// this session); it shouldn't flash back every time the player pauses.
@@ -80,12 +117,59 @@ function App() {
 		}
 	}, [])
 
+	// Returning users who already granted the mic go straight to the tuner. Where
+	// the Permissions API is missing (or doesn't know 'microphone', as in older
+	// Firefox) we just show the button.
+	useEffect(() => {
+		if (!canQueryPermissions()) return
+		let cancelled = false
+		const timer = window.setTimeout(() => {
+			setStartPhase((phase) => (phase === 'checking' ? 'idle' : phase))
+		}, PERMISSION_CHECK_TIMEOUT_MS)
+		navigator.permissions
+			.query({ name: 'microphone' as PermissionName })
+			.then(async (status) => {
+				if (cancelled) return
+				if (status.state !== 'granted') {
+					setStartPhase('idle')
+					return
+				}
+				setStartPhase('starting')
+				void importTunerView()
+				await requestMic()
+				if (!cancelled) setStartPhase('idle')
+			})
+			.catch(() => {
+				if (!cancelled) setStartPhase('idle')
+			})
+		return () => {
+			cancelled = true
+			window.clearTimeout(timer)
+		}
+	}, [requestMic])
+
 	// Release the microphone (and clear the browser's "recording" indicator) when
 	// the stream is replaced or the app unmounts.
 	useEffect(() => {
 		if (!stream) return
 		return () => {
 			stream.getTracks().forEach((track) => track.stop())
+		}
+	}, [stream])
+
+	// A track ends on its own when the mic is unplugged, its permission is revoked
+	// or the OS hands it to another app. Without this the tuner would sit on a
+	// dead stream forever, so go back to the start screen and say why.
+	useEffect(() => {
+		if (!stream) return
+		const tracks = stream.getAudioTracks()
+		function onEnded() {
+			setStream(null)
+			setError(MIC_DISCONNECTED_MESSAGE)
+		}
+		tracks.forEach((track) => track.addEventListener('ended', onEnded))
+		return () => {
+			tracks.forEach((track) => track.removeEventListener('ended', onEnded))
 		}
 	}, [stream])
 
@@ -120,6 +204,21 @@ function App() {
 						onChangeTuning={setTuning}
 					/>
 				</Suspense>
+				{versionBadge}
+			</>
+		)
+	}
+
+	if (startPhase !== 'idle') {
+		return (
+			<>
+				<div className="mic-button">
+					{startPhase === 'starting' && (
+						<div className="mic-panel" role="status" aria-live="polite">
+							<p className="mic-hint">Starting microphone…</p>
+						</div>
+					)}
+				</div>
 				{versionBadge}
 			</>
 		)
