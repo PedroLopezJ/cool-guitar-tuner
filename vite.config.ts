@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react-swc'
 import { VitePWA } from 'vite-plugin-pwa'
 import { version } from './package.json'
@@ -11,7 +11,7 @@ export default defineConfig({
 		react(),
 		VitePWA({
 			registerType: 'autoUpdate',
-			pwaAssets: { config: true }, // usa pwa-assets.config.ts para generar e inyectar iconos
+			pwaAssets: { config: true }, // generate and inject icons from pwa-assets.config.ts
 			manifest: {
 				name: 'Coolest Guitar & Bass Tuner',
 				short_name: 'Coolest Tuner',
@@ -30,16 +30,19 @@ export default defineConfig({
 				navigateFallback: 'index.html',
 				cleanupOutdatedCaches: true,
 				clientsClaim: true,
-				// Three.js/R3F/drei generan chunks grandes; subir el tope (por defecto 2 MiB)
-				// para que el bundle 3D entre en el precache y la app funcione offline.
+				// Three.js/R3F/drei produce large chunks; raise the cap (2 MiB by default)
+				// so the 3D bundle fits in the precache and the app works offline.
 				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
 			},
-			devOptions: { enabled: false }, // SW sólo en build/preview, no en `vite dev`
+			devOptions: { enabled: false }, // service worker only in build/preview, not in `vite dev`
 		}),
 	],
 	test: {
 		globals: true,
 		environment: 'jsdom',
 		setupFiles: './src/test/setup.ts',
+		// Agent worktrees live under .claude/worktrees; keep their copies of the
+		// test files out of this project's run.
+		exclude: [...configDefaults.exclude, '.claude/**'],
 	},
 })
