@@ -15,6 +15,7 @@
 		"react/exhaustive-deps": "warn",
 		"react/react-in-jsx-scope": "off",
 		"vitest/require-mock-type-parameters": "off",
+		"vitest/valid-expect": ["warn", { "maxArgs": 2 }],
 		"no-underscore-dangle": ["warn", { "allow": ["__APP_VERSION__"] }]
 	},
 	"ignorePatterns": ["node_modules", "dist", "build", ".git", ".claude"]

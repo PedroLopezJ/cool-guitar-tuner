@@ -167,7 +167,7 @@ describe('detectPitch range and octave guards', () => {
 		const { freq } = detectPitch(buf, sampleRate)
 		// 30 Hz is below the default 60 Hz floor, so its period is out of lag range
 		// and the fundamental can't be reported here.
-		if (freq !== null) expect(freq).toBeGreaterThan(50)
+		expect(freq === null || freq > 50).toBe(true)
 	})
 
 	it('does not collapse to the sub-octave when the 2nd harmonic is strong', () => {
