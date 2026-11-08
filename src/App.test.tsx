@@ -187,6 +187,54 @@ describe('App', () => {
 		expect(stored).toMatchObject({ v: 1, instrument: 'guitar', tuningId: 'open-g' })
 	})
 
+	it('restores, steps, clamps and persists the A4 calibration', async () => {
+		window.localStorage.setItem(
+			SETTINGS_STORAGE_KEY,
+			JSON.stringify({ v: 1, instrument: 'guitar', tuningId: 'e-standard', a4Hz: 449 }),
+		)
+		const user = userEvent.setup()
+		stubNavigator({ getUserMedia: vi.fn().mockResolvedValue(createMockStream().stream) })
+		stubAudio()
+
+		render(<App />)
+		await user.click(allowButton()!)
+		const raise = await screen.findByRole('button', { name: 'Raise A4 by 1 hertz' })
+		expect(screen.getByText('449')).toBeInTheDocument()
+
+		await user.click(raise)
+		await user.click(raise)
+		expect(screen.getByText('450')).toBeInTheDocument()
+		expect(JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY)!)).toMatchObject({
+			a4Hz: 450,
+		})
+
+		await user.click(screen.getByRole('button', { name: 'Reset A4 to 440 hertz' }))
+		expect(screen.getByText('440')).toBeInTheDocument()
+		expect(JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY)!)).toMatchObject({
+			a4Hz: 440,
+		})
+	})
+
+	it('restores and persists the tuning mode', async () => {
+		window.localStorage.setItem(
+			SETTINGS_STORAGE_KEY,
+			JSON.stringify({ v: 1, instrument: 'guitar', tuningId: 'e-standard', mode: 'chromatic' }),
+		)
+		const user = userEvent.setup()
+		stubNavigator({ getUserMedia: vi.fn().mockResolvedValue(createMockStream().stream) })
+		stubAudio()
+
+		render(<App />)
+		await user.click(allowButton()!)
+		const chromatic = await screen.findByRole('radio', { name: 'Chromatic' })
+		expect(chromatic).toHaveAttribute('aria-checked', 'true')
+
+		await user.click(screen.getByRole('radio', { name: 'String' }))
+		expect(JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY)!)).toMatchObject({
+			mode: 'string',
+		})
+	})
+
 	it('starts automatically when the mic permission is already granted', async () => {
 		const { getUserMedia } = stubNavigator({
 			getUserMedia: vi.fn().mockResolvedValue(createMockStream().stream),

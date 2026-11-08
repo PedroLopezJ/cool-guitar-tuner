@@ -334,7 +334,12 @@
 	justify-content: center;
 	gap: 0.35rem;
 	/* min(92vw, …) keeps a steady gutter on both sides so the pills never sit
-	   flush against the screen edges; the rem cap stops it stretching on desktop. */
+	   flush against the screen edges; the rem cap stops it stretching on desktop.
+	   max-content matters: with left: 50% an absolutely positioned box only
+	   shrink-wraps into the remaining half of the screen, which split even a
+	   6-string strip into two rows on phones. Up to 8 strings now stay on one row
+	   down to 320px, which the settings row above relies on. */
+	width: max-content;
 	max-width: min(92vw, 34rem);
 	padding: 0.45rem 0.65rem;
 	background: rgba(8, 16, 28, 0.45);
@@ -391,11 +396,243 @@
 	box-shadow: 0 0 22px rgba(34, 197, 94, 0.7);
 }
 
+/* In string mode the pips are lock toggles, so the strip takes taps again and
+   each pip drops the native button chrome to keep the pill look. */
+.string-strip.is-lockable {
+	pointer-events: auto;
+}
+
+.string-strip.is-lockable .string-pip {
+	position: relative;
+	margin: 0;
+	font-family: inherit;
+	line-height: 1;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.string-strip.is-lockable .string-pip:hover {
+	border-color: rgba(125, 211, 252, 0.6);
+}
+
+.string-strip.is-lockable .string-pip:focus-visible {
+	outline: 2px solid rgba(61, 255, 154, 0.9);
+	outline-offset: 2px;
+}
+
+/* A locked string gets a magenta edge plus a dot above it — a shape, not just a
+   tint, so the pin reads at a glance even next to the active/in-tune colors. */
+.string-pip.is-locked {
+	border-color: rgba(244, 114, 182, 0.95);
+	box-shadow: 0 0 14px rgba(244, 114, 182, 0.45);
+}
+
+.string-pip.is-locked.is-active {
+	box-shadow:
+		0 0 0 2px rgba(244, 114, 182, 0.9),
+		0 0 18px rgba(56, 189, 248, 0.6);
+}
+
+.string-pip.is-locked.is-active.in-tune {
+	box-shadow:
+		0 0 0 2px rgba(244, 114, 182, 0.9),
+		0 0 22px rgba(34, 197, 94, 0.7);
+}
+
+.string-pip.is-locked::after {
+	content: '';
+	position: absolute;
+	top: -0.42rem;
+	left: 50%;
+	width: 0.36rem;
+	height: 0.36rem;
+	border-radius: 50%;
+	background: #f472b6;
+	box-shadow: 0 0 8px rgba(244, 114, 182, 0.9);
+	transform: translateX(-50%);
+}
+
+/* --- Cents readout ---------------------------------------------------------
+   Sits inside the rings, just above the note. The wrapper is a size container so
+   cqmin tracks the canvas' shorter side, which is exactly what ResponsiveZoom
+   fits the scene to: one world unit = 50cqmin × 0.95 / FIT_RADIUS (2.775) ≈
+   17.1cqmin. The readout's bottom edge sits ~0.42 units above the centre (clear
+   of the note glyphs) and its fonts scale with the same unit, so it stays inside
+   the inner ring from a 320px phone up to a 4K monitor. vmin is the fallback
+   where container units aren't supported (the canvas fills the viewport). */
+.tuner-canvas-wrapper {
+	container-type: size;
+}
+
+.cents-readout {
+	position: absolute;
+	left: 50%;
+	bottom: calc(50% + 7.2vmin);
+	bottom: calc(50% + 7.2cqmin);
+	z-index: 2;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.1rem;
+	transform: translateX(-50%);
+	pointer-events: none;
+	white-space: nowrap;
+	text-align: center;
+	text-shadow: 0 0 12px rgba(5, 7, 13, 0.9);
+	font-variant-numeric: tabular-nums;
+}
+
+.cents-readout__value {
+	font-size: clamp(1rem, 4.2vmin, 2rem);
+	font-size: clamp(1rem, 4.2cqmin, 2rem);
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: #fdba74;
+	transition: color 0.2s ease;
+}
+
+.cents-readout__hint {
+	font-size: clamp(0.62rem, 2.2vmin, 0.95rem);
+	font-size: clamp(0.62rem, 2.2cqmin, 0.95rem);
+	font-weight: 700;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: #9fb6d4;
+}
+
+.cents-readout.is-in-tune .cents-readout__value,
+.cents-readout.is-in-tune .cents-readout__hint {
+	color: #4ade80;
+}
+
+/* --- Tuner settings (mode + A4) ---------------------------------------------
+   The two set-and-forget controls live in the bottom-left corner on wide
+   screens, stacked, mirroring the version badge on the right and clear of the
+   centered string strip. */
+.tuner-settings {
+	position: absolute;
+	left: calc(clamp(0.75rem, 3vw, 1.5rem) + env(safe-area-inset-left, 0px));
+	bottom: calc(clamp(0.75rem, 3.5vh, 1.75rem) + env(safe-area-inset-bottom, 0px));
+	z-index: 3;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.45rem;
+}
+
+.segmented,
+.a4-control {
+	display: flex;
+	align-items: center;
+	gap: 0.2rem;
+	padding: 0.22rem;
+	background: rgba(8, 16, 28, 0.5);
+	border: 1px solid rgba(56, 189, 248, 0.25);
+	border-radius: 999px;
+	backdrop-filter: blur(14px) saturate(140%);
+	-webkit-backdrop-filter: blur(14px) saturate(140%);
+	box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
+}
+
+.segmented__option {
+	padding: 0.3rem 0.65rem;
+	border: none;
+	border-radius: 999px;
+	background: transparent;
+	color: #9fb6d4;
+	font-family: inherit;
+	font-size: 0.7rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	cursor: pointer;
+	transition:
+		color 0.18s ease,
+		background 0.18s ease,
+		box-shadow 0.18s ease;
+}
+
+.segmented__option:hover {
+	color: #e6f0ff;
+}
+
+/* Magenta to tell it apart from the green instrument toggle at a glance. */
+.segmented__option.is-active {
+	color: #1a0614;
+	background: linear-gradient(135deg, #f9a8d4, #e879f9);
+	box-shadow: 0 0 14px rgba(232, 121, 249, 0.45);
+}
+
+.a4-control__step,
+.a4-control__reset {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.7rem;
+	height: 1.7rem;
+	padding: 0;
+	border: 1px solid rgba(159, 182, 212, 0.25);
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.04);
+	color: #e6f0ff;
+	font-family: inherit;
+	font-size: 0.95rem;
+	font-weight: 700;
+	line-height: 1;
+	cursor: pointer;
+	transition:
+		border-color 0.15s ease,
+		background 0.15s ease;
+}
+
+.a4-control__step:hover,
+.a4-control__reset:hover {
+	border-color: rgba(125, 211, 252, 0.6);
+	background: rgba(56, 189, 248, 0.12);
+}
+
+.a4-control__step[aria-disabled='true'] {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.a4-control__reset {
+	color: #f9a8d4;
+}
+
+.a4-control__value {
+	min-width: 5.6rem;
+	padding: 0 0.35rem;
+	text-align: center;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	color: #e6f0ff;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.a4-control__note,
+.a4-control__unit {
+	color: #7fe9b6;
+}
+
+.segmented__option:focus-visible,
+.a4-control__step:focus-visible,
+.a4-control__reset:focus-visible {
+	outline: 2px solid rgba(61, 255, 154, 0.9);
+	outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.tuning-selector__panel {
 		animation: none;
 	}
-	.string-pip {
+	.string-pip,
+	.segmented__option,
+	.a4-control__step,
+	.a4-control__reset,
+	.cents-readout__value {
 		transition: none;
 	}
 }
@@ -420,5 +657,24 @@
 
 	.tuning-selector {
 		top: 3.5rem;
+	}
+}
+
+/* Portrait phones/tablets: no free corner beside the centered strip, so the
+   settings become a centered row just above it (wrapping to two rows on the
+   narrowest phones — it's anchored by its bottom edge, so it grows upward, away
+   from the strip). 3.4rem ≈ one strip row (1.75rem pip + 0.9rem padding +
+   border) plus a gap; the strip stays on one row up to 8 strings even at 320px. */
+@media (max-width: 860px) and (orientation: portrait) {
+	.tuner-settings {
+		left: 50%;
+		bottom: calc(clamp(0.75rem, 3.5vh, 1.75rem) + env(safe-area-inset-bottom, 0px) + 3.4rem);
+		transform: translateX(-50%);
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: center;
+		align-items: center;
+		width: max-content;
+		max-width: 92vw;
 	}
 }

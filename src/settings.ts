@@ -1,3 +1,4 @@
+import { DEFAULT_A4_HZ, MAX_A4_HZ, MIN_A4_HZ } from './audio/noteUtils'
 import {
 	DEFAULT_TUNING_BY_INSTRUMENT,
 	INSTRUMENTS,
@@ -31,6 +32,24 @@ const isTuningId = (value: unknown): value is string =>
 	typeof value === 'string' && TUNINGS.some((tuning) => tuning.id === value)
 
 /**
+ * 'string' measures against the nearest (or locked) open string of the selected
+ * tuning; 'chromatic' against whatever semitone is closest, like a plain tuner.
+ */
+export type TunerMode = 'string' | 'chromatic'
+
+export const TUNER_MODES: { id: TunerMode; label: string }[] = [
+	{ id: 'string', label: 'String' },
+	{ id: 'chromatic', label: 'Chromatic' },
+]
+
+const isTunerMode = (value: unknown): value is TunerMode =>
+	TUNER_MODES.some((mode) => mode.id === value)
+
+// Whole hertz only: the control steps by 1 Hz, so anything else was hand-edited.
+const isA4Hz = (value: unknown): value is number =>
+	Number.isInteger(value) && (value as number) >= MIN_A4_HZ && (value as number) <= MAX_A4_HZ
+
+/**
  * One entry per persisted setting: its default and a validator for what comes
  * back out of storage. Adding a setting is a single line here — the Settings
  * type, the defaults and the validation all derive from this table.
@@ -38,6 +57,8 @@ const isTuningId = (value: unknown): value is string =>
 const FIELDS = {
 	instrument: field<Instrument>('guitar', isInstrument),
 	tuningId: field<string>(DEFAULT_TUNING_BY_INSTRUMENT.guitar.id, isTuningId),
+	mode: field<TunerMode>('string', isTunerMode),
+	a4Hz: field<number>(DEFAULT_A4_HZ, isA4Hz),
 }
 
 type FieldValue<F> = F extends Field<infer T> ? T : never

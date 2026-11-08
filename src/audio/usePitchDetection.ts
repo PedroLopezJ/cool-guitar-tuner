@@ -51,6 +51,11 @@ export function analysisWindowSize(minFreq: number): number {
 	return minFreq < LONG_WINDOW_BELOW_HZ ? LONG_WINDOW_SAMPLES : WINDOW_SAMPLES
 }
 
+// A context can sit 'suspended' for a moment right after creation even when the
+// resume() that follows a mic gesture is about to succeed. Only report it as
+// stuck (so the UI asks for a tap) once it has stayed suspended this long.
+const SUSPENDED_GRACE_MS = 500
+
 // The gesture events that grant user activation (pointerdown only counts for a
 // mouse; touch activates on pointerup) — needed to resume a context the browser
 // suspended under its autoplay policy.
@@ -85,6 +90,13 @@ export interface PitchState {
 	noteWithOctave: string
 	cents: number
 	inTune: boolean
+	/**
+	 * The browser is holding the AudioContext suspended (autoplay policy after an
+	 * auto-start with no user gesture yet, an iOS interruption…), so nothing is
+	 * being heard until the user interacts with the page. Always false while
+	 * there's a reading.
+	 */
+	suspended: boolean
 }
 
 const initialPitchState: PitchState = {
@@ -93,7 +105,10 @@ const initialPitchState: PitchState = {
 	noteWithOctave: '—',
 	cents: 0,
 	inTune: false,
+	suspended: false,
 }
+
+const suspendedPitchState: PitchState = { ...initialPitchState, suspended: true }
 
 function clampFrequency(freq: number, minFreq: number, maxFreq: number): number | null {
 	if (!Number.isFinite(freq)) return null
@@ -135,6 +150,8 @@ export function usePitchDetection(
 	const pendingSemitoneRef = useRef<number | null>(null)
 	const pendingCountRef = useRef(0)
 	const inTuneRef = useRef(false)
+	// When the context was first seen suspended (null while running).
+	const suspendedSinceRef = useRef<number | null>(null)
 	const lastStateRef = useRef(initialPitchState)
 
 	const resetTracking = useCallback(() => {
@@ -164,6 +181,7 @@ export function usePitchDetection(
 		highPassRef.current = null
 		bufferRef.current = null
 		resetTracking()
+		suspendedSinceRef.current = null
 		setState(initialPitchState)
 		lastStateRef.current = initialPitchState
 	}, [resetTracking])
@@ -242,12 +260,17 @@ export function usePitchDetection(
 		const pitchRefsReady = () =>
 			analyserRef.current !== null && contextRef.current !== null && bufferRef.current !== null
 
-		/** Drop to the idle "—" state (once) and forget the note being tracked. */
-		function emitSilence(now: number) {
+		/**
+		 * Drop to the idle "—" state (once) and forget the note being tracked.
+		 * `suspended` flags a context the browser won't run until a user gesture.
+		 */
+		function emitSilence(now: number, suspended = false) {
 			resetTracking()
-			if (lastStateRef.current.noteName !== initialPitchState.noteName) {
-				setState(initialPitchState)
-				lastStateRef.current = initialPitchState
+			const last = lastStateRef.current
+			if (last.noteName !== initialPitchState.noteName || last.suspended !== suspended) {
+				const next = suspended ? suspendedPitchState : initialPitchState
+				setState(next)
+				lastStateRef.current = next
 				lastEmitTimeRef.current = now
 			}
 		}
@@ -268,10 +291,12 @@ export function usePitchDetection(
 			// A suspended context hands back a frozen (or zeroed) buffer; don't keep
 			// showing the last note as if it were live.
 			if (isSuspended(liveCtx)) {
-				emitSilence(now)
+				suspendedSinceRef.current ??= now
+				emitSilence(now, now - suspendedSinceRef.current >= SUSPENDED_GRACE_MS)
 				rafRef.current = requestAnimationFrame(tick)
 				return
 			}
+			suspendedSinceRef.current = null
 
 			liveAnalyser.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>)
 			let rms = 0
@@ -353,12 +378,13 @@ export function usePitchDetection(
 			const inTune = isInTune(cents, inTuneRef.current)
 			inTuneRef.current = inTune
 
-			const nextState = {
+			const nextState: PitchState = {
 				frequency: smoothed,
 				noteName: name,
 				noteWithOctave: `${name}${octave}`,
 				cents,
 				inTune,
+				suspended: false,
 			}
 
 			// Emit a note/octave/in-tune change at once; rate-limit the within-note
@@ -367,7 +393,8 @@ export function usePitchDetection(
 			const structuralChange =
 				prevState.noteName !== nextState.noteName ||
 				prevState.noteWithOctave !== nextState.noteWithOctave ||
-				prevState.inTune !== nextState.inTune
+				prevState.inTune !== nextState.inTune ||
+				prevState.suspended !== nextState.suspended
 			const drifted =
 				Math.abs((prevState.frequency ?? 0) - (nextState.frequency ?? 0)) > 0.2 ||
 				Math.abs(prevState.cents - nextState.cents) > 0.5
