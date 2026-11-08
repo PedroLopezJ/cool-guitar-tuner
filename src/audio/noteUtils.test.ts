@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import {
-	frequencyToNote,
-	getCents,
-	isInvalidFrequency,
+	DEFAULT_A4_HZ,
+	IN_TUNE_ENTER_CENTS,
+	IN_TUNE_EXIT_CENTS,
+	MAX_A4_HZ,
+	MIN_A4_HZ,
 	cannotComputeCents,
-	noteFromSemitone,
+	clampA4Hz,
 	frequencyToSemitone,
-	IN_TUNE_CENTS_THRESHOLD,
+	getCents,
+	isInTune,
+	isInvalidFrequency,
+	noteFromSemitone,
 } from './noteUtils'
 
 describe('isInvalidFrequency', () => {
@@ -25,45 +30,6 @@ describe('isInvalidFrequency', () => {
 	})
 })
 
-describe('frequencyToNote', () => {
-	it('returns fallback for invalid frequency', () => {
-		expect(frequencyToNote(0)).toEqual({
-			name: '—',
-			octave: 4,
-			referenceHz: 440,
-			semitonesFromA4: 0,
-		})
-		expect(frequencyToNote(Number.NaN)).toEqual({
-			name: '—',
-			octave: 4,
-			referenceHz: 440,
-			semitonesFromA4: 0,
-		})
-	})
-	it('returns A4 for 440 Hz', () => {
-		const result = frequencyToNote(440)
-		expect(result.name).toBe('A')
-		expect(result.octave).toBe(4)
-		expect(result.referenceHz).toBe(440)
-		expect(result.semitonesFromA4).toBe(0)
-	})
-	it('returns E2 for low E string (~82.41 Hz)', () => {
-		const result = frequencyToNote(82.41)
-		expect(result.name).toBe('E')
-		expect(result.octave).toBe(2)
-	})
-	it('returns A#4 for slightly above 440 Hz', () => {
-		const result = frequencyToNote(466.16)
-		expect(result.name).toBe('A#')
-		expect(result.octave).toBe(4)
-	})
-	it('returns G3 for ~196 Hz', () => {
-		const result = frequencyToNote(196)
-		expect(result.name).toBe('G')
-		expect(result.octave).toBe(3)
-	})
-})
-
 describe('noteFromSemitone', () => {
 	it('maps 0 to A4', () => {
 		expect(noteFromSemitone(0)).toEqual({ name: 'A', octave: 4, referenceHz: 440 })
@@ -78,9 +44,18 @@ describe('noteFromSemitone', () => {
 		expect(noteFromSemitone(-17).octave).toBe(3) // E3
 		expect(noteFromSemitone(-5).octave).toBe(4) // E4
 	})
-	it('agrees with frequencyToNote on the reference frequency', () => {
-		const { semitonesFromA4, referenceHz } = frequencyToNote(196)
-		expect(noteFromSemitone(semitonesFromA4).referenceHz).toBeCloseTo(referenceHz, 6)
+	it('round-trips with frequencyToSemitone on the reference frequency', () => {
+		const semitone = frequencyToSemitone(196)!
+		const { name, octave, referenceHz } = noteFromSemitone(semitone)
+		expect(`${name}${octave}`).toBe('G3')
+		expect(referenceHz).toBeCloseTo(196, 0)
+	})
+	it('scales the reference frequency with a calibrated A4', () => {
+		expect(noteFromSemitone(0, 432).referenceHz).toBe(432)
+		expect(noteFromSemitone(-29, 432).referenceHz).toBeCloseTo(
+			noteFromSemitone(-29).referenceHz * (432 / 440),
+			6,
+		)
 	})
 })
 
@@ -94,6 +69,16 @@ describe('frequencyToSemitone', () => {
 	it('returns null for invalid input', () => {
 		expect(frequencyToSemitone(0)).toBeNull()
 		expect(frequencyToSemitone(Number.NaN)).toBeNull()
+		expect(frequencyToSemitone(440, 0)).toBeNull()
+	})
+	it('reads 432 Hz as A4 at 0 cents when calibrated to A4 = 432', () => {
+		const semitone = frequencyToSemitone(432, 432)!
+		expect(semitone).toBe(0)
+		const { name, octave, referenceHz } = noteFromSemitone(semitone, 432)
+		expect(`${name}${octave}`).toBe('A4')
+		expect(getCents(432, referenceHz)).toBeCloseTo(0, 6)
+		// …whereas at the default 440 the same 432 Hz is a flat A4.
+		expect(getCents(432, noteFromSemitone(frequencyToSemitone(432)!).referenceHz)).toBeLessThan(-30)
 	})
 })
 
@@ -129,9 +114,44 @@ describe('getCents', () => {
 	})
 })
 
-describe('IN_TUNE_CENTS_THRESHOLD', () => {
-	it('is a positive number', () => {
-		expect(IN_TUNE_CENTS_THRESHOLD).toBeGreaterThan(0)
-		expect(typeof IN_TUNE_CENTS_THRESHOLD).toBe('number')
+describe('isInTune (hysteresis)', () => {
+	it('uses a tighter band to enter than to stay', () => {
+		expect(IN_TUNE_ENTER_CENTS).toBeLessThan(IN_TUNE_EXIT_CENTS)
+	})
+	it('enters only inside the enter band', () => {
+		expect(isInTune(0, false)).toBe(true)
+		expect(isInTune(-4.9, false)).toBe(true)
+		expect(isInTune(6, false)).toBe(false)
+		expect(isInTune(-7.5, false)).toBe(false)
+	})
+	it('stays in tune until the exit band is crossed', () => {
+		expect(isInTune(6, true)).toBe(true)
+		expect(isInTune(-7.9, true)).toBe(true)
+		expect(isInTune(8, true)).toBe(false)
+		expect(isInTune(-12, true)).toBe(false)
+	})
+	it('does not flicker for a note hovering on the old 8-cent boundary', () => {
+		let inTune = false
+		const readings = [3, 7.5, 8.2, 7.8, 8.1, 7.6, 8.3]
+		const verdicts = readings.map((cents) => (inTune = isInTune(cents, inTune)))
+		// Once in, it drops out at 8.2 and then needs to get back under 5 cents.
+		expect(verdicts).toEqual([true, true, false, false, false, false, false])
+	})
+	it('is never in tune for non-finite cents', () => {
+		expect(isInTune(Number.NaN, true)).toBe(false)
+	})
+})
+
+describe('A4 calibration range', () => {
+	it('defaults to 440 within a sane range', () => {
+		expect(DEFAULT_A4_HZ).toBe(440)
+		expect(MIN_A4_HZ).toBeLessThan(432)
+		expect(MAX_A4_HZ).toBeGreaterThan(446)
+	})
+	it('clamps out-of-range and invalid values', () => {
+		expect(clampA4Hz(432)).toBe(432)
+		expect(clampA4Hz(100)).toBe(MIN_A4_HZ)
+		expect(clampA4Hz(1000)).toBe(MAX_A4_HZ)
+		expect(clampA4Hz(Number.NaN)).toBe(DEFAULT_A4_HZ)
 	})
 })

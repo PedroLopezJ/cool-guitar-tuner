@@ -7,9 +7,13 @@ import {
 	lowestFrequency,
 	nearestString,
 	noteToFrequency,
+	spellNoteName,
 	stringNumber,
 	tuningsForInstrument,
+	usesFlats,
 } from './tunings'
+
+const byId = (id: string) => TUNINGS.find((t) => t.id === id)!
 
 describe('tunings', () => {
 	it('converts scientific pitch notation to the right frequency', () => {
@@ -78,5 +82,55 @@ describe('instruments & extended strings', () => {
 	it('reports the lowest string frequency for the adaptive floor', () => {
 		expect(lowestFrequency(bass)).toBeCloseTo(noteToFrequency('B0'), 5)
 		expect(noteToFrequency('B0')).toBeCloseTo(30.87, 1)
+	})
+})
+
+describe('A4 calibration', () => {
+	it('scales every open-string frequency with A4', () => {
+		expect(noteToFrequency('A4', 432)).toBeCloseTo(432, 6)
+		expect(noteToFrequency('E2', 432)).toBeCloseTo(noteToFrequency('E2') * (432 / 440), 6)
+		const bass = DEFAULT_TUNING_BY_INSTRUMENT.bass
+		expect(lowestFrequency(bass, 432)).toBeCloseTo(lowestFrequency(bass) * (432 / 440), 6)
+	})
+
+	it('measures string cents against the calibrated reference', () => {
+		// A string tuned to E2 at A4 = 432 is ~-31.8 cents at 440, but dead on at 432.
+		const e2At432 = noteToFrequency('E2', 432)
+		expect(nearestString(e2At432, DEFAULT_TUNING)!.cents).toBeCloseTo(-31.77, 1)
+		expect(nearestString(e2At432, DEFAULT_TUNING, 432)!.cents).toBeCloseTo(0, 6)
+	})
+})
+
+describe('enharmonic spelling', () => {
+	it('detects tunings written with flats', () => {
+		expect(usesFlats(byId('eb-standard'))).toBe(true)
+		expect(usesFlats(byId('bass-eb-standard'))).toBe(true)
+		// B1 / B3 are naturals, not flats; sharps-only tunings stay sharp.
+		expect(usesFlats(byId('e-standard'))).toBe(false)
+		expect(usesFlats(byId('drop-csharp'))).toBe(false)
+		expect(usesFlats(byId('open-d'))).toBe(false)
+	})
+
+	it('respells sharps as flats, with or without an octave', () => {
+		expect(spellNoteName('C#', true)).toBe('Db')
+		expect(spellNoteName('D#', true)).toBe('Eb')
+		expect(spellNoteName('F#', true)).toBe('Gb')
+		expect(spellNoteName('G#', true)).toBe('Ab')
+		expect(spellNoteName('A#', true)).toBe('Bb')
+		expect(spellNoteName('D#2', true)).toBe('Eb2')
+		expect(spellNoteName('A#-1', true)).toBe('Bb-1')
+	})
+
+	it('leaves naturals, placeholders and sharp-mode names untouched', () => {
+		expect(spellNoteName('E', true)).toBe('E')
+		expect(spellNoteName('B3', true)).toBe('B3')
+		expect(spellNoteName('—', true)).toBe('—')
+		expect(spellNoteName('D#', false)).toBe('D#')
+		expect(spellNoteName('D#2', false)).toBe('D#2')
+	})
+
+	it('matches the tuning spelling for the Eb Standard low string', () => {
+		const tuning = byId('eb-standard')
+		expect(spellNoteName('D#2', usesFlats(tuning))).toBe(tuning.strings[0])
 	})
 })

@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MAX_FREQ, MIN_FREQ, detectPitch } from './detectPitch'
 import {
-	getCents,
-	noteFromSemitone,
+	DEFAULT_A4_HZ,
+	clampA4Hz,
 	frequencyToSemitone,
-	IN_TUNE_CENTS_THRESHOLD,
+	getCents,
+	isInTune,
+	noteFromSemitone,
 } from './noteUtils'
 
-// Frequency search range. Low end covers drop-tunings (drop-D ≈ 73 Hz, drop-C
-// ≈ 65 Hz); high end leaves headroom above the open high-E harmonics.
-const MIN_FREQ = 60
-const MAX_FREQ = 1200
+// The DSP lives in ./detectPitch; re-exported so existing imports keep working.
+export { detectPitch, MAX_FREQ, MIN_FREQ } from './detectPitch'
 
 const MIN_RMS = 0.008
 // Minimum NSDF clarity (0..1) for a reading to be trusted.
 const MIN_CLARITY = 0.7
-// McLeod peak-picking threshold: pick the first key maximum within this factor
-// of the strongest one. Picking the *first* (lowest lag) such peak is what
-// makes the method robust against octave errors.
-const MPM_THRESHOLD = 0.9
 
 const HOLD_MS = 220
 const DETECT_HZ = 30
@@ -40,167 +37,46 @@ const ENABLE_FILTERS = true
 const HPF_HZ = 60
 const LPF_HZ = 2000
 
-// The audio graph already low-passes at LPF_HZ, so the signal is band-limited
-// well below the original Nyquist. Decimating by this factor before the O(N·lag)
-// NSDF keeps everything we search for (≤ MAX_FREQ) safely below the decimated
-// Nyquist while cutting correlation cost ~DECIMATION×. A box-average over each
-// group doubles as a cheap anti-alias filter.
-const DECIMATION = 2
+// Analysis window. NSDF needs a few periods of the lowest note in the window to
+// lock on: 4096 samples (~85 ms at 48 kHz) holds 3+ periods of anything above
+// ~35 Hz, but only ~2.6 of a 5-string bass low B (≈ 31 Hz), which reads
+// jittery. Doubling the window down there steadies it at the cost of latency,
+// so guitar tunings (even the 8-string F#1 floor at ~39 Hz) keep the short one.
+const WINDOW_SAMPLES = 4096
+const LONG_WINDOW_SAMPLES = 8192
+const LONG_WINDOW_BELOW_HZ = 35
 
-type PitchCandidate = {
-	freq: number | null
-	clarity: number
+/** Analyser window (fftSize) for a given detection floor. */
+export function analysisWindowSize(minFreq: number): number {
+	return minFreq < LONG_WINDOW_BELOW_HZ ? LONG_WINDOW_SAMPLES : WINDOW_SAMPLES
 }
 
-// Reused across detections so the hot path allocates nothing (no per-frame GC).
-// detectPitch runs sequentially, so sharing module scratch is safe.
-let decimateScratch: Float32Array | null = null
-let xScratch: Float32Array | null = null
-let nsdfScratch: Float32Array | null = null
+// The gesture events that grant user activation (pointerdown only counts for a
+// mouse; touch activates on pointerup) — needed to resume a context the browser
+// suspended under its autoplay policy.
+const GESTURE_EVENTS = ['pointerdown', 'pointerup', 'keydown'] as const
 
-/**
- * Box-average groups of `factor` samples down to a shorter buffer. The averaging
- * is a (cheap) low-pass that suppresses aliasing as we drop the sample rate.
- */
-function decimate(buffer: ArrayLike<number>, factor: number): Float32Array {
-	const outLen = Math.floor(buffer.length / factor)
-	if (!decimateScratch || decimateScratch.length !== outLen) {
-		decimateScratch = new Float32Array(outLen)
-	}
-	const out = decimateScratch
-	const inv = 1 / factor
-	for (let i = 0; i < outLen; i++) {
-		let s = 0
-		const base = i * factor
-		for (let j = 0; j < factor; j++) s += buffer[base + j]
-		out[i] = s * inv
-	}
-	return out
+/** 'interrupted' is iOS Safari's state during a phone call or Siri. */
+function isSuspended(ctx: AudioContext): boolean {
+	const state = ctx.state as AudioContextState | 'interrupted'
+	return state === 'suspended' || state === 'interrupted'
 }
 
-/**
- * McLeod Pitch Method (MPM): build the Normalized Square Difference Function
- * and return its key maxima. The NSDF is self-normalizing (no window needed)
- * and bounded to [-1, 1], so its peak value doubles as a clarity measure.
- */
-function normalizedSquareDifference(
-	buffer: Float32Array,
-	sampleRate: number,
-	minFreq: number,
-	maxFreq: number,
-): { nsdf: Float32Array; minLag: number; maxLag: number } {
-	const size = buffer.length
-	const maxLag = Math.min(size - 1, Math.floor(sampleRate / minFreq))
-	const minLag = Math.max(2, Math.ceil(sampleRate / maxFreq))
-	if (!nsdfScratch || nsdfScratch.length !== maxLag + 1) nsdfScratch = new Float32Array(maxLag + 1)
-	const nsdf = nsdfScratch
-
-	// Remove DC so a mic offset can't bias the correlation.
-	let mean = 0
-	for (let i = 0; i < size; i++) mean += buffer[i]
-	mean /= size
-
-	if (!xScratch || xScratch.length !== size) xScratch = new Float32Array(size)
-	const x = xScratch
-	for (let i = 0; i < size; i++) x[i] = buffer[i] - mean
-
-	for (let lag = 0; lag <= maxLag; lag++) {
-		let acf = 0
-		let m = 0
-		const limit = size - lag
-		for (let i = 0; i < limit; i++) {
-			const a = x[i]
-			const b = x[i + lag]
-			acf += a * b
-			m += a * a + b * b
-		}
-		nsdf[lag] = m > 0 ? (2 * acf) / m : 0
+/** resume() may be missing (old WebKit) or reject (no user activation yet). */
+function safeResume(ctx: AudioContext): void {
+	try {
+		ctx.resume?.()?.catch(() => {
+			// Not allowed yet (no user activation); a later gesture retries.
+		})
+	} catch {
+		// Synchronous throw from a non-conforming implementation; same as above.
 	}
-
-	return { nsdf, minLag, maxLag }
-}
-
-/**
- * Collect the "key maxima" of the NSDF: the single highest point inside each
- * positive lobe (the region between an upward and the following downward zero
- * crossing). The lobe containing lag 0 is intentionally skipped.
- */
-function keyMaxima(
-	nsdf: Float32Array,
-	minLag: number,
-	maxLag: number,
-): Array<{ lag: number; value: number }> {
-	const peaks: Array<{ lag: number; value: number }> = []
-	let inLobe = false
-	let bestLag = -1
-	let bestVal = -Infinity
-
-	for (let lag = 1; lag <= maxLag; lag++) {
-		const prev = nsdf[lag - 1]
-		const cur = nsdf[lag]
-		if (prev <= 0 && cur > 0) {
-			// Entering a positive lobe.
-			inLobe = true
-			bestLag = lag
-			bestVal = cur
-		} else if (inLobe && cur > 0) {
-			if (cur > bestVal) {
-				bestVal = cur
-				bestLag = lag
-			}
-		} else if (inLobe && cur <= 0) {
-			// Leaving the lobe — commit its peak.
-			if (bestLag >= minLag) peaks.push({ lag: bestLag, value: bestVal })
-			inLobe = false
-		}
-	}
-	if (inLobe && bestLag >= minLag) peaks.push({ lag: bestLag, value: bestVal })
-	return peaks
-}
-
-/** Sub-sample peak location via parabolic interpolation around an integer lag. */
-function refineLag(nsdf: Float32Array, lag: number): { lag: number; value: number } {
-	if (lag <= 0 || lag >= nsdf.length - 1) return { lag, value: nsdf[lag] }
-	const y1 = nsdf[lag - 1]
-	const y2 = nsdf[lag]
-	const y3 = nsdf[lag + 1]
-	const denom = y1 - 2 * y2 + y3
-	if (denom === 0) return { lag, value: y2 }
-	const delta = (0.5 * (y1 - y3)) / denom
-	const value = y2 - 0.25 * (y1 - y3) * delta
-	return { lag: lag + delta, value }
 }
 
 function median(values: number[]): number {
-	const sorted = [...values].toSorted((a, b) => a - b)
+	const sorted = values.toSorted((a, b) => a - b)
 	const mid = Math.floor(sorted.length / 2)
 	return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
-}
-
-export function detectPitch(
-	buffer: ArrayLike<number>,
-	sampleRate: number,
-	minFreq: number = MIN_FREQ,
-	maxFreq: number = MAX_FREQ,
-): PitchCandidate {
-	const decimated = decimate(buffer, DECIMATION)
-	const ds = sampleRate / DECIMATION
-	const { nsdf, minLag, maxLag } = normalizedSquareDifference(decimated, ds, minFreq, maxFreq)
-	const peaks = keyMaxima(nsdf, minLag, maxLag)
-	if (peaks.length === 0) return { freq: null, clarity: 0 }
-
-	// Threshold relative to the strongest lobe, then take the first (lowest-lag,
-	// i.e. highest-frequency / fundamental) lobe that clears it.
-	let maxValue = 0
-	for (const p of peaks) if (p.value > maxValue) maxValue = p.value
-	const threshold = maxValue * MPM_THRESHOLD
-	const chosen = peaks.find((p) => p.value >= threshold) ?? peaks[0]
-
-	const refined = refineLag(nsdf, chosen.lag)
-	if (refined.lag <= 0) return { freq: null, clarity: 0 }
-	const freq = ds / refined.lag
-	const clarity = Math.max(0, Math.min(1, refined.value))
-	return { freq, clarity }
 }
 
 export interface PitchState {
@@ -226,27 +102,30 @@ function clampFrequency(freq: number, minFreq: number, maxFreq: number): number 
 }
 
 export interface PitchDetectionOptions {
-	/** Lowest frequency to search for; the HPF cutoff and NSDF lag range follow it. */
+	/** Lowest frequency to search for; the HPF cutoff, NSDF lag range and analysis window follow it. */
 	minFreq?: number
 	/** High-pass cutoff (Hz) applied to the mic signal before detection. */
 	hpf?: number
+	/** Concert pitch for note names and cents (clamped to MIN_A4_HZ..MAX_A4_HZ). */
+	a4Hz?: number
 }
 
 export function usePitchDetection(
 	stream: MediaStream | null,
 	options: PitchDetectionOptions = {},
 ): PitchState {
-	const { minFreq = MIN_FREQ, hpf = HPF_HZ } = options
+	const { minFreq = MIN_FREQ, hpf = HPF_HZ, a4Hz = DEFAULT_A4_HZ } = options
 	const [state, setState] = useState<PitchState>(initialPitchState)
 	const contextRef = useRef<AudioContext | null>(null)
 	const analyserRef = useRef<AnalyserNode | null>(null)
 	const highPassRef = useRef<BiquadFilterNode | null>(null)
 	const bufferRef = useRef<Float32Array | null>(null)
 	const rafRef = useRef<number>(0)
-	// Read inside the rAF loop / graph so a tuning change adapts the range and
-	// filter live, without tearing down and rebuilding the audio graph.
+	// Read inside the rAF loop / graph so a tuning or calibration change adapts
+	// live, without tearing down and rebuilding the audio graph.
 	const minFreqRef = useRef(minFreq)
 	const hpfRef = useRef(hpf)
+	const a4Ref = useRef(clampA4Hz(a4Hz))
 	const smoothedFreqRef = useRef<number | null>(null)
 	const freqHistoryRef = useRef<number[]>([])
 	const lastStableTimeRef = useRef(0)
@@ -255,6 +134,7 @@ export function usePitchDetection(
 	const stableSemitoneRef = useRef<number | null>(null)
 	const pendingSemitoneRef = useRef<number | null>(null)
 	const pendingCountRef = useRef(0)
+	const inTuneRef = useRef(false)
 	const lastStateRef = useRef(initialPitchState)
 
 	const resetTracking = useCallback(() => {
@@ -263,6 +143,7 @@ export function usePitchDetection(
 		stableSemitoneRef.current = null
 		pendingSemitoneRef.current = null
 		pendingCountRef.current = 0
+		inTuneRef.current = false
 	}, [])
 
 	const cleanup = useCallback(() => {
@@ -271,7 +152,9 @@ export function usePitchDetection(
 		if (analyserRef.current && contextRef.current) {
 			try {
 				analyserRef.current.disconnect()
-			} catch {}
+			} catch {
+				// Already disconnected (e.g. the context closed first) — nothing to undo.
+			}
 		}
 		if (contextRef.current?.state !== 'closed') {
 			contextRef.current?.close()
@@ -287,6 +170,14 @@ export function usePitchDetection(
 
 	useEffect(() => {
 		minFreqRef.current = minFreq
+		// Grow/shrink the analysis window in place when the floor crosses the
+		// long-window threshold (e.g. switching guitar ↔ 5-string bass).
+		const analyser = analyserRef.current
+		const size = analysisWindowSize(minFreq)
+		if (analyser && analyser.fftSize !== size) {
+			analyser.fftSize = size
+			bufferRef.current = new Float32Array(size)
+		}
 	}, [minFreq])
 
 	useEffect(() => {
@@ -295,10 +186,13 @@ export function usePitchDetection(
 	}, [hpf])
 
 	useEffect(() => {
-		if (!stream) {
-			cleanup()
-			return
-		}
+		a4Ref.current = clampA4Hz(a4Hz)
+	}, [a4Hz])
+
+	useEffect(() => {
+		// No stream, nothing to run: the previous stream's effect cleanup already
+		// tore the graph down and reset the state to idle.
+		if (!stream) return
 
 		const ctx = new (
 			window.AudioContext ||
@@ -306,9 +200,9 @@ export function usePitchDetection(
 		)()
 		contextRef.current = ctx
 		// Browsers can hand back a suspended context even after the mic gesture.
-		void ctx.resume?.()
+		safeResume(ctx)
 		const analyser = ctx.createAnalyser()
-		analyser.fftSize = 4096
+		analyser.fftSize = analysisWindowSize(minFreqRef.current)
 		analyserRef.current = analyser
 
 		const source = ctx.createMediaStreamSource(stream)
@@ -327,12 +221,36 @@ export function usePitchDetection(
 			source.connect(analyser)
 		}
 
-		const bufferLength = analyser.fftSize
-		const dataArray = new Float32Array(bufferLength)
-		bufferRef.current = dataArray
+		bufferRef.current = new Float32Array(analyser.fftSize)
+
+		// Browsers suspend the context on their own: autoplay policy, a tab in the
+		// background, an iOS phone call ('interrupted'). Try to get it running again
+		// whenever that could now succeed — on a state change while visible, when the
+		// page comes back, and on the next user gesture.
+		const resumeIfSuspended = () => {
+			if (contextRef.current !== ctx || !isSuspended(ctx)) return
+			if (document.visibilityState === 'hidden') return
+			safeResume(ctx)
+		}
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible') resumeIfSuspended()
+		}
+		ctx.addEventListener?.('statechange', resumeIfSuspended)
+		document.addEventListener('visibilitychange', onVisibilityChange)
+		for (const type of GESTURE_EVENTS) document.addEventListener(type, resumeIfSuspended)
 
 		const pitchRefsReady = () =>
 			analyserRef.current !== null && contextRef.current !== null && bufferRef.current !== null
+
+		/** Drop to the idle "—" state (once) and forget the note being tracked. */
+		function emitSilence(now: number) {
+			resetTracking()
+			if (lastStateRef.current.noteName !== initialPitchState.noteName) {
+				setState(initialPitchState)
+				lastStateRef.current = initialPitchState
+				lastEmitTimeRef.current = now
+			}
+		}
 
 		function tick() {
 			if (!pitchRefsReady()) return
@@ -343,10 +261,19 @@ export function usePitchDetection(
 			}
 			lastDetectTimeRef.current = now
 
-			const analyser = analyserRef.current!
-			const ctx = contextRef.current!
+			const liveAnalyser = analyserRef.current!
+			const liveCtx = contextRef.current!
 			const buf = bufferRef.current!
-			analyser.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>)
+
+			// A suspended context hands back a frozen (or zeroed) buffer; don't keep
+			// showing the last note as if it were live.
+			if (isSuspended(liveCtx)) {
+				emitSilence(now)
+				rafRef.current = requestAnimationFrame(tick)
+				return
+			}
+
+			liveAnalyser.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>)
 			let rms = 0
 			for (let i = 0; i < buf.length; i++) {
 				const v = buf[i]
@@ -354,7 +281,8 @@ export function usePitchDetection(
 			}
 			rms = Math.sqrt(rms / buf.length)
 			const minF = minFreqRef.current
-			const { freq, clarity } = detectPitch(buf, ctx.sampleRate, minF, MAX_FREQ)
+			const a4 = a4Ref.current
+			const { freq, clarity } = detectPitch(buf, liveCtx.sampleRate, minF, MAX_FREQ)
 			const clamped = freq === null ? null : clampFrequency(freq, minF, MAX_FREQ)
 			const hasSignal = rms >= MIN_RMS && clamped !== null && clarity >= MIN_CLARITY
 
@@ -365,12 +293,7 @@ export function usePitchDetection(
 					rafRef.current = requestAnimationFrame(tick)
 					return
 				}
-				resetTracking()
-				if (lastStateRef.current.noteName !== initialPitchState.noteName) {
-					setState(initialPitchState)
-					lastStateRef.current = initialPitchState
-					lastEmitTimeRef.current = now
-				}
+				emitSilence(now)
 				rafRef.current = requestAnimationFrame(tick)
 				return
 			}
@@ -393,13 +316,14 @@ export function usePitchDetection(
 			lastStableTimeRef.current = now
 
 			// --- Note stabilization on a single semitone index -------------------
-			const instSemitone = frequencyToSemitone(smoothed)!
+			const previousStable = stableSemitoneRef.current
+			const instSemitone = frequencyToSemitone(smoothed, a4)!
 			if (stableSemitoneRef.current === null) {
 				stableSemitoneRef.current = instSemitone
 				pendingSemitoneRef.current = null
 				pendingCountRef.current = 0
 			} else if (instSemitone !== stableSemitoneRef.current) {
-				const stableRef = noteFromSemitone(stableSemitoneRef.current).referenceHz
+				const stableRef = noteFromSemitone(stableSemitoneRef.current, a4).referenceHz
 				const centsFromStable = getCents(smoothed, stableRef)
 				if (pendingSemitoneRef.current === instSemitone) {
 					pendingCountRef.current += 1
@@ -419,18 +343,22 @@ export function usePitchDetection(
 				pendingSemitoneRef.current = null
 				pendingCountRef.current = 0
 			}
+			// A new note starts out of tune: hysteresis only carries within a note.
+			if (stableSemitoneRef.current !== previousStable) inTuneRef.current = false
 
 			// Name, octave and cents all derive from the SAME stable semitone, so
 			// they can never disagree with each other.
-			const { name, octave, referenceHz } = noteFromSemitone(stableSemitoneRef.current)
+			const { name, octave, referenceHz } = noteFromSemitone(stableSemitoneRef.current, a4)
 			const cents = getCents(smoothed, referenceHz)
+			const inTune = isInTune(cents, inTuneRef.current)
+			inTuneRef.current = inTune
 
 			const nextState = {
 				frequency: smoothed,
 				noteName: name,
 				noteWithOctave: `${name}${octave}`,
 				cents,
-				inTune: Math.abs(cents) < IN_TUNE_CENTS_THRESHOLD,
+				inTune,
 			}
 
 			// Emit a note/octave/in-tune change at once; rate-limit the within-note
@@ -455,6 +383,9 @@ export function usePitchDetection(
 		rafRef.current = requestAnimationFrame(tick)
 
 		return () => {
+			ctx.removeEventListener?.('statechange', resumeIfSuspended)
+			document.removeEventListener('visibilitychange', onVisibilityChange)
+			for (const type of GESTURE_EVENTS) document.removeEventListener(type, resumeIfSuspended)
 			cleanup()
 		}
 	}, [stream, cleanup, resetTracking])

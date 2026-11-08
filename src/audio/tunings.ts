@@ -4,6 +4,8 @@
 // bass E standard covers 4-/5-/6-string by adding a low B and a high C); the
 // extra strings surface tinted instead of as separate rows.
 
+import { DEFAULT_A4_HZ, getCents } from './noteUtils'
+
 export type Instrument = 'guitar' | 'bass'
 export type TuningCategory = 'Standard' | 'Drop' | 'Open'
 
@@ -206,7 +208,6 @@ export const DEFAULT_TUNING_BY_INSTRUMENT: Record<Instrument, Tuning> = {
 export const DEFAULT_TUNING = DEFAULT_TUNING_BY_INSTRUMENT.guitar
 
 const LETTER_SEMITONES: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
-const A4_HZ = 440
 
 /** Semitone distance from A4 for a note like "E2", "C#3" or "Bb1". */
 export function noteToSemitonesFromA4(note: string): number {
@@ -218,20 +219,50 @@ export function noteToSemitonesFromA4(note: string): number {
 	return LETTER_SEMITONES[letter] + accidental - 9 + (octave - 4) * 12
 }
 
-export function noteToFrequency(note: string): number {
-	return A4_HZ * Math.pow(2, noteToSemitonesFromA4(note) / 12)
+export function noteToFrequency(note: string, a4Hz: number = DEFAULT_A4_HZ): number {
+	return a4Hz * Math.pow(2, noteToSemitonesFromA4(note) / 12)
 }
 
 /** Frequency of the lowest open string — drives the adaptive detection floor. */
-export function lowestFrequency(tuning: Tuning): number {
+export function lowestFrequency(tuning: Tuning, a4Hz: number = DEFAULT_A4_HZ): number {
 	let lowest = Infinity
-	for (const note of tuning.strings) lowest = Math.min(lowest, noteToFrequency(note))
+	for (const note of tuning.strings) lowest = Math.min(lowest, noteToFrequency(note, a4Hz))
 	return lowest
 }
 
 /** Strip the octave digit so "C#3" → "C#" for compact labels. */
 export function stringLetter(note: string): string {
 	return note.replace(/-?\d+$/, '')
+}
+
+// The detector only knows sharps, but tunings are written the way players say
+// them ("Eb Standard"). Respelling the detected note to match keeps the big
+// centre label and the string pips from naming the same pitch two ways.
+const SHARP_TO_FLAT: Record<string, string> = {
+	'C#': 'Db',
+	'D#': 'Eb',
+	'F#': 'Gb',
+	'G#': 'Ab',
+	'A#': 'Bb',
+}
+
+/** Whether a tuning is written with flats (e.g. Eb Standard), so notes should be too. */
+export function usesFlats(tuning: Tuning): boolean {
+	return tuning.strings.some((note) => /^[A-Ga-g]b-?\d/.test(note))
+}
+
+/**
+ * Respell a sharp note name as its flat enharmonic when `flats` is set:
+ * "D#" → "Eb", "D#2" → "Eb2". Naturals, placeholders ("—") and anything when
+ * `flats` is false pass through unchanged. Only C#/D#/F#/G#/A# can occur, so
+ * the octave number never changes.
+ */
+export function spellNoteName(name: string, flats: boolean): string {
+	if (!flats) return name
+	const match = /^([A-G]#)(-?\d+)?$/.exec(name)
+	if (!match) return name
+	const flat = SHARP_TO_FLAT[match[1]]
+	return flat ? `${flat}${match[2] ?? ''}` : name
 }
 
 function coreStartIndex(tuning: Tuning): number {
@@ -274,13 +305,17 @@ export interface ActiveString {
  * Strings sit several semitones apart, so the nearest match is unambiguous well
  * before the note is in tune.
  */
-export function nearestString(frequency: number, tuning: Tuning): ActiveString | null {
+export function nearestString(
+	frequency: number,
+	tuning: Tuning,
+	a4Hz: number = DEFAULT_A4_HZ,
+): ActiveString | null {
 	if (!Number.isFinite(frequency) || frequency <= 0) return null
 	let bestIndex = -1
 	let bestAbsCents = Infinity
 	let bestCents = 0
 	for (let i = 0; i < tuning.strings.length; i++) {
-		const cents = 1200 * Math.log2(frequency / noteToFrequency(tuning.strings[i]))
+		const cents = getCents(frequency, noteToFrequency(tuning.strings[i], a4Hz))
 		const abs = Math.abs(cents)
 		if (abs < bestAbsCents) {
 			bestAbsCents = abs
