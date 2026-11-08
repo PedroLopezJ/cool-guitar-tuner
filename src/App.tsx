@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
 import './App.css'
 import { usePitchDetection } from './audio/usePitchDetection'
+import { clampA4Hz } from './audio/noteUtils'
 import {
 	DEFAULT_TUNING_BY_INSTRUMENT,
 	lowestFrequency,
@@ -8,7 +9,7 @@ import {
 	type Tuning,
 } from './audio/tunings'
 import { useWakeLock } from './hooks/useWakeLock'
-import { loadSettings, saveSettings, settingsTuning } from './settings'
+import { loadSettings, saveSettings, settingsTuning, type TunerMode } from './settings'
 
 // The 3D tuner pulls in three / @react-three-fiber / drei (~1 MB) — none of which
 // the initial mic-permission screen needs. Loading it lazily keeps that weight in
@@ -69,23 +70,25 @@ function App() {
 	const [startPhase, setStartPhase] = useState<StartPhase>(() =>
 		canQueryPermissions() ? 'checking' : 'idle',
 	)
-	// Restore the last instrument/tuning; loadSettings() validates whatever it finds.
+	// Restore the last session's setup; loadSettings() validates whatever it finds.
 	const [initialSettings] = useState(loadSettings)
 	const [instrument, setInstrument] = useState<Instrument>(initialSettings.instrument)
 	const [tuning, setTuning] = useState<Tuning>(() => settingsTuning(initialSettings))
+	const [mode, setMode] = useState<TunerMode>(initialSettings.mode)
+	const [a4Hz, setA4Hz] = useState(initialSettings.a4Hz)
 
 	useEffect(() => {
-		saveSettings({ instrument, tuningId: tuning.id })
-	}, [instrument, tuning.id])
+		saveSettings({ instrument, tuningId: tuning.id, mode, a4Hz })
+	}, [instrument, tuning.id, mode, a4Hz])
 
 	// Follow the selected tuning: search a little below its lowest string (so a
 	// flat string still registers) and slide the high-pass down to match. Bass
 	// drops the floor far lower than guitar; guitar only pays for it when a low
-	// tuning is picked.
+	// tuning is picked. A4 shifts every string's pitch, so the floor follows it.
 	const detectionOptions = useMemo(() => {
-		const lowest = lowestFrequency(tuning)
-		return { minFreq: lowest * 0.85, hpf: Math.max(20, lowest * 0.6) }
-	}, [tuning])
+		const lowest = lowestFrequency(tuning, a4Hz)
+		return { minFreq: lowest * 0.85, hpf: Math.max(20, lowest * 0.6), a4Hz }
+	}, [tuning, a4Hz])
 	const pitchState = usePitchDetection(stream, detectionOptions)
 
 	// Keep the screen on while tuning — nobody wants to tap the phone awake
@@ -100,6 +103,9 @@ function App() {
 		setInstrument(next)
 		setTuning(DEFAULT_TUNING_BY_INSTRUMENT[next])
 	}, [])
+
+	// Whole hertz within the supported range, whatever the caller passes.
+	const changeA4 = useCallback((next: number) => setA4Hz(clampA4Hz(Math.round(next))), [])
 
 	const requestMic = useCallback(async () => {
 		setError(null)
@@ -199,9 +205,13 @@ function App() {
 						pitchState={pitchState}
 						instrument={instrument}
 						tuning={tuning}
+						mode={mode}
+						a4Hz={a4Hz}
 						hasDetected={hasDetected}
 						onChangeInstrument={changeInstrument}
 						onChangeTuning={setTuning}
+						onChangeMode={setMode}
+						onChangeA4={changeA4}
 					/>
 				</Suspense>
 				{versionBadge}

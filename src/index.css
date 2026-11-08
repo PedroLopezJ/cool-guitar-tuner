@@ -110,3 +110,16 @@ body,
 	letter-spacing: 0.08em;
 	box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
 }
+
+/* Visually hidden but still read by screen readers (live announcements). */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}

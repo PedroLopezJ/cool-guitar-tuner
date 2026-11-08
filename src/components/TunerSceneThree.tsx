@@ -5,7 +5,24 @@ import * as THREE from 'three'
 // Self-hosted so the label renders offline: without an explicit `font`, troika
 // fetches its default from a CDN that the service worker never precaches.
 import fontUrl from '@fontsource/roboto/files/roboto-latin-400-normal.woff?url'
-import type { PitchState } from '../audio/usePitchDetection'
+
+/**
+ * What the scene draws, already resolved by the view: the note spelled for the
+ * tuning, and the offset/verdict of whatever is being tuned against (the target
+ * string, or the chromatic note in chromatic mode). The scene doesn't decide
+ * what "in tune" means.
+ */
+export interface SceneReading {
+	/** Letter + accidental ('Eb'), or '—' while silent. */
+	noteName: string
+	/** Octave digits, or '' while silent. */
+	octave: string
+	/** Offset that drives the outer ring. */
+	cents: number
+	inTune: boolean
+	/** A live pitch is being tracked (keeps the frame rate up). */
+	active: boolean
+}
 
 const BASE_RADIUS = 1.6
 const RING_THICKNESS = 0.075
@@ -165,25 +182,25 @@ function PulsingRing({
 }
 
 export function TunerSceneThree({
-	pitchState,
-	stringInfo,
+	reading,
+	label,
 }: {
-	pitchState: PitchState
-	stringInfo: { number: number | null; target: string } | null
+	reading: SceneReading
+	/** Small caption under the note (e.g. "STRING 6 · Eb2"); latin glyphs only. */
+	label: string | null
 }) {
-	const { frequency, noteName, noteWithOctave, cents, inTune } = pitchState
+	const { noteName, octave, cents, inTune, active } = reading
 	const baseColor = inTune ? COLOR_IN_TUNE : COLOR_BASE
 	const offsetColor = inTune ? COLOR_IN_TUNE : COLOR_OFFSET
 	const offsetRadius = frequencyRadius(cents)
 
-	const octave = noteWithOctave === '—' ? '' : noteWithOctave.slice(noteName.length)
 	// Sit the octave just past the right edge of the note glyphs (approx width).
 	const octaveX = (noteName.length * 0.34) / 2 + 0.14
 
 	return (
 		<>
 			<AnimatedBackground inTune={inTune} />
-			<FrameLimiter active={frequency !== null} inTune={inTune} />
+			<FrameLimiter active={active} inTune={inTune} />
 			<ambientLight intensity={0.6} />
 			<ResponsiveZoom />
 			<Suspense fallback={null}>
@@ -209,7 +226,7 @@ export function TunerSceneThree({
 						{octave}
 					</Text>
 				)}
-				{stringInfo && (
+				{label && (
 					<Text
 						font={fontUrl}
 						position={[0, -0.62, 0.2]}
@@ -218,9 +235,7 @@ export function TunerSceneThree({
 						anchorY="middle"
 						color={inTune ? COLOR_IN_TUNE : '#9fb6d4'}
 					>
-						{stringInfo.number === null
-							? `STRING · ${stringInfo.target}`
-							: `STRING ${stringInfo.number} · ${stringInfo.target}`}
+						{label}
 					</Text>
 				)}
 			</Suspense>
