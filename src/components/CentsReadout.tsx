@@ -4,11 +4,11 @@ import { memo } from 'react'
 // jump sideways as the reading crosses zero.
 const MINUS = '−'
 
-/** Whole cents, always signed away from zero: "+12 ¢", "−7 ¢", "0 ¢". */
+/** Whole cents, always signed away from zero: "+12", "−7", "0". */
 export function formatCents(cents: number): string {
 	const rounded = Math.round(cents)
-	if (rounded === 0) return '0 ¢'
-	return `${rounded > 0 ? '+' : MINUS}${Math.abs(rounded)} ¢`
+	if (rounded === 0) return '0'
+	return `${rounded > 0 ? '+' : MINUS}${Math.abs(rounded)}`
 }
 
 type Direction = 'in-tune' | 'flat' | 'sharp'

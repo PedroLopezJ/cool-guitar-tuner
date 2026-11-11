@@ -8,7 +8,7 @@ A browser tuner for guitar and bass. It listens to your microphone, finds the pi
 - **Guitar and bass tunings.** Standard, drop and open tunings, including extended range: 7/8-string guitar and 5/6-string bass.
 - **String-relative tuning.** In string mode the target string of the selected tuning decides the ring offset and when you're in tune: an untouched E string in Eb Standard reads a semitone sharp, not green. Chromatic mode tunes to the nearest semitone instead.
 - **Steady verdict.** "In tune" turns on within 5 cents and holds until you drift past 8, so it doesn't flicker at the edge.
-- **Cents readout.** Signed whole cents ("−12 ¢") with a "♭ Tune up", "♯ Tune down" or "✓ In tune" hint, so tuning doesn't rely on color alone.
+- **Cents readout.** Signed whole cents ("−12", no unit symbol) with a "♭ Tune up", "♯ Tune down" or "✓ In tune" hint, so tuning doesn't rely on color alone.
 - **Tuning-aware spelling.** Notes follow the tuning's accidentals: Eb Standard shows Eb, not D#.
 - **A4 calibration** from 430 to 450 Hz in 1 Hz steps, with a one-tap reset to 440 Hz.
 - **Lock a string.** In string mode, tap a string in the strip to make it the target, useful when a string is far enough off to read as its neighbor. Tap it again to go back to automatic. The lock resets when the tuning changes.

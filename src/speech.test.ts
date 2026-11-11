@@ -33,9 +33,9 @@ describe('describeString', () => {
 
 describe('formatCents', () => {
 	it('signs whole cents with a true minus and never shows −0', () => {
-		expect(formatCents(12.4)).toBe('+12 ¢')
-		expect(formatCents(-7.5)).toBe('−7 ¢')
-		expect(formatCents(-0.4)).toBe('0 ¢')
-		expect(formatCents(0)).toBe('0 ¢')
+		expect(formatCents(12.4)).toBe('+12')
+		expect(formatCents(-7.5)).toBe('−7')
+		expect(formatCents(-0.4)).toBe('0')
+		expect(formatCents(0)).toBe('0')
 	})
 })

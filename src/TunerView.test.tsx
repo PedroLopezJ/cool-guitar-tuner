@@ -120,7 +120,7 @@ describe('TunerView — string mode', () => {
 		expect(pip).toHaveClass('is-active')
 		expect(pip).not.toHaveClass('in-tune')
 
-		expect(screen.getByText('+100 ¢')).toBeInTheDocument()
+		expect(screen.getByText('+100')).toBeInTheDocument()
 		expect(screen.getByText('Tune down')).toBeInTheDocument()
 	})
 
@@ -145,7 +145,7 @@ describe('TunerView — string mode', () => {
 	it('shows a signed cents readout with a direction hint, hidden while silent', () => {
 		const { container, update } = renderView({ pitchState: pitchAt(detune(E2, -12)) })
 		// True minus sign, not a hyphen.
-		expect(screen.getByText('−12 ¢')).toBeInTheDocument()
+		expect(screen.getByText('−12')).toBeInTheDocument()
 		expect(screen.getByText('Tune up')).toBeInTheDocument()
 
 		update({ pitchState: pitchAt(null) })
@@ -173,7 +173,7 @@ describe('TunerView — string lock', () => {
 		expect(a).toHaveClass('is-locked', 'is-active')
 		expect(scene()).toHaveAttribute('data-label', 'STRING 5 · A2 · LOCKED')
 		// E2 measured against the locked A2: five semitones flat.
-		expect(screen.getByText('−500 ¢')).toBeInTheDocument()
+		expect(screen.getByText('−500')).toBeInTheDocument()
 
 		await user.click(a)
 		expect(a).toHaveAttribute('aria-pressed', 'false')
@@ -212,7 +212,7 @@ describe('TunerView — chromatic mode', () => {
 		expect(wrapper(container)).toHaveClass('in-tune')
 		expect(container.querySelector('.string-pip.is-active')).toBeNull()
 		expect(lockButtons()).toHaveLength(0)
-		expect(screen.getByText('0 ¢')).toBeInTheDocument()
+		expect(screen.getByText('0')).toBeInTheDocument()
 	})
 
 	it('switches mode from the toggle', async () => {
