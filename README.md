@@ -2,6 +2,8 @@
 
 A browser tuner for guitar and bass. It listens to your microphone, finds the pitch in real time and shows how far you are from the target string in a 3D scene. It runs entirely in the browser (no backend) and installs as an offline PWA.
 
+**Live:** [guitar-tuner.droplj.dev](https://guitar-tuner.droplj.dev/)
+
 ## Features
 
 - **Accurate pitch detection.** Uses the McLeod Pitch Method (MPM) with FFT-accelerated autocorrelation. The analysis window grows automatically for the low B of a 5-string bass.
